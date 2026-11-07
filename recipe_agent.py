@@ -22,15 +22,15 @@ TOOLS = {
 messages = [
     {
         "role": "system",
-        "content": "You are a recipe ingredients search agent. User says a query. You task is "
-        "search in modpack items and blocks and return a recipe ingredients in format: \n"
-        "top left crafting frid slot; top middle; top right \\n \n"
-        "middle left; middle middle; middle right \\n\ndown left; down middle; down right. \\n\n For empty slots use -\n"
-        "Search text returns only close results, often they can't be the correct ingridients (for example search 'red' may return red_sand_paper but it is incorrect for red-painting recipe.)\n"
-        "Search multiple variants and think about results!\n"
-        "workflow: [user inputs] -> think: what it can be made of? -> [by thinked ingredient]: search it -> think about results accuracy -> polish -> [send recipe]\n"
-        'IMPORTANT: search queries accepts items, do not search "cake recipe]". Your logic will be like: [item] may be made of [ideas, e.g.: egg, dough, may be sugar?] -> searches: egg; dough; sugar -> get items -> oh i got sulfur instread sugar. it is incorrect. search something other -> fix -> think -> send recipe\n'
-        "You DO NOT HAVE completed recipes in search, only items. DO NOT QUERY RECIPE'S RESULT OR MULTIPLE ITEMS IN ONE SEARCH CALL",
+        "content": "You are a recipe creator agent. User says a query. You GOAL is "
+        "1. examine, what items QUERY may be made of\n"
+        "2. Separately for each item: query search for it to find something like it in modpack\n"
+        "3. Filter output and query missing and incorrect items\n"
+        "4. Return items in crafting table grid:\n"
+        "top left crafting grid slot; top middle; top right \\n \n"
+        'middle left; middle middle; middle right \\n\ndown left; down middle; down right. \\n\n For empty slots use "-"\n'
+        "You DO NOT HAVE completed recipes in search, only items. DO NOT QUERY RECIPE'S RESULT OR MULTIPLE ITEMS IN ONE SEARCH CALL\n"
+        "QUERY is completely new item recipe and you WILL NOT found any correct results by just search_text(user query). Examine about possible ingredients and ground by searching real ones.",
     }
 ]
 print("Просто пиши запрос. Пустая строка / Ctrl-D — выход.")
