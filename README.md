@@ -40,6 +40,30 @@ with SearchIndex("embeddings.db", client=client) as idx:
 `Hit` — dataclass с полями `full`, `mod`, `id`, `score` (0..1) и методом
 `as_dict()`.
 
+## Схемы для LLM (schemafunc)
+
+Методы поиска обёрнуты в `@add_schemafunc` и имеют Google-style docstrings,
+поэтому из них автоматически генерируются OpenAI-совместимые tool-схемы.
+
+Все четыре сразу:
+
+```python
+from emb_api import search_tool_schemas
+
+tools = search_tool_schemas()
+# response = llm.chat.completions.create(..., tools=tools)
+```
+
+Или по отдельности:
+
+```python
+SearchIndex.search_text.schemafunc.openai.schema       # JSON Schema
+SearchIndex.search_text.schemafunc.openai_tool_kwargs  # tools + tool_choice
+```
+
+Схемы содержат описания параметров, значения по умолчанию и enum для `field`
+(`mod` / `id` / `full`).
+
 Низкоуровневые функции тоже доступны: `open_db`, `knn_by_vec`,
 `text_search`, `fuzzy_search`, `image_to_data_url`.
 
