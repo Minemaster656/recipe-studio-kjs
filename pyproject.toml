@@ -1,0 +1,23 @@
+[project]
+name = "scripts"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Minemaster656", email = "glebbasmanov123@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+    "numpy>=2.5.4",
+    "openai>=3.46.0",
+    "rich>=15.0.0",
+    "sqlite-vec>=0.1.9",
+]
+
+[project.scripts]
+scripts = "scripts:main"
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
