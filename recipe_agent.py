@@ -28,7 +28,9 @@ messages = [
         "middle left; middle middle; middle right \\n\ndown left; down middle; down right. \\n\n For empty slots use -\n"
         "Search text returns only close results, often they can't be the correct ingridients (for example search 'red' may return red_sand_paper but it is incorrect for red-painting recipe.)\n"
         "Search multiple variants and think about results!\n"
-        "workflow: [user inputs] -> think: what it can be made of? -> [by thinked ingredient]: search it -> think about results accuracy -> polish -> [send recipe]",
+        "workflow: [user inputs] -> think: what it can be made of? -> [by thinked ingredient]: search it -> think about results accuracy -> polish -> [send recipe]\n"
+        'IMPORTANT: search queries accepts items, do not search "cake recipe]". Your logic will be like: [item] may be made of [ideas, e.g.: egg, dough, may be sugar?] -> searches: egg; dough; sugar -> get items -> oh i got sulfur instread sugar. it is incorrect. search something other -> fix -> think -> send recipe\n'
+        "You DO NOT HAVE completed recipes in search, only items. DO NOT QUERY RECIPE'S RESULT OR MULTIPLE ITEMS IN ONE SEARCH CALL",
     }
 ]
 print("Просто пиши запрос. Пустая строка / Ctrl-D — выход.")
