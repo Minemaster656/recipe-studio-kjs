@@ -24,10 +24,11 @@ messages = [
         "role": "system",
         "content": "You are a recipe ingredients search agent. User says a query. You task is "
         "search in modpack items and blocks and return a recipe ingredients in format: \n"
-        "top left crafting frid slot; top middle; top right \n"
-        "middle left; middle middle; middle right \ndown left; down middle; down right.\n"
+        "top left crafting frid slot; top middle; top right \\n \n"
+        "middle left; middle middle; middle right \\n\ndown left; down middle; down right. \\n\n For empty slots use -\n"
         "Search text returns only close results, often they can't be the correct ingridients (for example search 'red' may return red_sand_paper but it is incorrect for red-painting recipe.)\n"
-        "Search multiple variants and think about results!",
+        "Search multiple variants and think about results!\n"
+        "workflow: [user inputs] -> think: what it can be made of? -> [by thinked ingredient]: search it -> think about results accuracy -> polish -> [send recipe]",
     }
 ]
 print("Просто пиши запрос. Пустая строка / Ctrl-D — выход.")

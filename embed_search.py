@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Интерактивный поиск по embeddings.db:
+Interactive search over embeddings.db:
 
-  1) векторный поиск (текст)
-  2) текстовый поиск (substring, LIKE)
-  3) нечёткий (fuzzy) поиск
-  4) векторный поиск по изображению (multimodal embedding)
-  0) выход
+  1) vector search (text)
+  2) text search (substring, LIKE)
+  3) fuzzy search
+  4) vector search by image (multimodal embedding)
+  0) exit
 
-Библиотечная часть — в emb_api.py.
+The library part lives in emb_api.py.
 """
 
 import argparse
@@ -130,7 +130,7 @@ def _has_kitty_graphics() -> bool:
 
 
 def try_display_image(path: str):
-    """Возвращает 'kitty' | 'chafa' | None."""
+    """Return 'kitty' | 'chafa' | None."""
     if _has_kitty_graphics() and shutil.which("kitten"):
         try:
             r = subprocess.run(

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Эмбеддит список строк вида "mod:id" через локальный OpenAI-совместимый
-эндпоинт и складывает в sqlite-vec.
+Embed a list of "mod:id" strings through a local OpenAI-compatible
+endpoint and store them in sqlite-vec.
 
-Колонки:
-  full       TEXT  PRIMARY KEY  — вся строка ("mod:id")
-  mod        TEXT               — часть до ':' (aux)
-  id         TEXT               — часть после ':' (aux)
-  embedding  FLOAT[N]           — вектор от embeddinggemma2
+Columns:
+  full       TEXT  PRIMARY KEY  — the whole string ("mod:id")
+  mod        TEXT               — the part before ':' (aux)
+  id         TEXT               — the part after ':' (aux)
+  embedding  FLOAT[N]           — vector from embeddinggemma2
 
-Повторные запуски не создают дублей — уже заэмбеженные строки скипаются.
+Repeated runs do not create duplicates: already embedded strings are skipped.
 """
 
 import argparse
@@ -43,7 +43,7 @@ def dedupe(seq: list[str]) -> list[str]:
 
 
 def split_full(full: str) -> tuple[str, str]:
-    """'mod:id' -> ('mod', 'id'); если ':' нет — mod='', id=full."""
+    """'mod:id' -> ('mod', 'id'); if ':' is missing, mod='', id=full."""
     if ":" in full:
         mod, ident = full.split(":", 1)
         return mod, ident
@@ -64,7 +64,7 @@ class Embedder:
         return [d.embedding for d in data]
 
     def embed_safe(self, texts: list[str]) -> list[list[float]]:
-        """Пробуем батч, при ошибке — по одной с ретраями."""
+        """Try a batch first; on failure, fall back to one-at-a-time with retries."""
         try:
             return self.embed(texts)
         except Exception as e:

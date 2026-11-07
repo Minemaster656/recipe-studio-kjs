@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Библиотека семантического поиска по embeddings.db.
+Semantic search library for embeddings.db.
 
-Пример:
+Example:
 
     from emb_api import EmbeddingClient, SearchIndex
 
@@ -14,8 +14,8 @@
     hits = idx.search_substring("fan", field="id", limit=5)
     hits = idx.search_fuzzy("fna", field="id", limit=5)
 
-Все поисковые функции возвращают list[Hit]. Низкоуровневые функции
-(knn_by_vec, text_search, fuzzy_search, open_db) тоже доступны снаружи.
+All search functions return list[Hit]. Low-level functions
+(knn_by_vec, text_search, fuzzy_search, open_db) are also available.
 """
 
 import base64
@@ -43,11 +43,11 @@ FIELDS = ("mod", "id", "full")
 
 
 class EmbeddingError(RuntimeError):
-    """Общая ошибка эмбеддинга/поиска."""
+    """Base embedding/search error."""
 
 
 class ImageNotSupported(EmbeddingError):
-    """Сервер не умеет эмбеддить изображения."""
+    """The server does not support image embeddings."""
 
 
 # -------------------------------------------------------------- результат ----─
@@ -93,7 +93,7 @@ def ensure_table(db: sqlite3.Connection, dim: int) -> None:
 
 
 def split_full(full: str) -> tuple[str, str]:
-    """'mod:id' -> ('mod', 'id'); если ':' нет — mod='', id=full."""
+    """'mod:id' -> ('mod', 'id'); if ':' is missing, mod='', id=full."""
     if ":" in full:
         mod, ident = full.split(":", 1)
         return mod, ident
@@ -134,7 +134,7 @@ def image_to_data_url(
     source: str | Path | bytes | bytearray | memoryview,
     mime: str | None = None,
 ) -> str:
-    """Файл/путь или сырые байты -> data: URL для /v1/embeddings."""
+    """Convert a file path or raw bytes to a data: URL for /v1/embeddings."""
     if isinstance(source, (bytes, bytearray, memoryview)):
         data = bytes(source)
         mime = mime or _sniff_mime(data)
@@ -158,7 +158,7 @@ _IMAGE_PROBE = (
 
 
 class EmbeddingClient:
-    """Обёртка над OpenAI-совместимым /v1/embeddings."""
+    """Wrapper around an OpenAI-compatible /v1/embeddings endpoint."""
 
     def __init__(
         self,
@@ -198,7 +198,7 @@ class EmbeddingClient:
         }
 
     def _probe_image(self, model: str) -> str | None:
-        """Один раз проверяем, понимает ли сервер картинки в /v1/embeddings."""
+        """Check once whether the server accepts images in /v1/embeddings."""
         if model in self._image_modes:
             return self._image_modes[model]
 
@@ -269,8 +269,8 @@ class EmbeddingClient:
         model: str | None = None,
     ) -> list[float] | None:
         """
-        Возвращает вектор изображения или None, если сервер не умеет картинки.
-        При сетевой/HTTP-ошибке бросает EmbeddingError.
+        Return the image embedding, or None if the server does not support images.
+        Raise EmbeddingError on network/HTTP errors.
         """
         model = model or self.model
         mode = self._probe_image(model)
@@ -457,8 +457,8 @@ def index_texts(
     model: str | None = None,
 ) -> int:
     """
-    Идемпотентно добавляет строки "mod:id" в embeddings.db.
-    Возвращает количество реально вставленных записей.
+    Idempotently add "mod:id" strings to embeddings.db.
+    Return the number of rows actually inserted.
     """
     items = _dedupe(texts)
     if not items:
@@ -521,7 +521,7 @@ def index_texts(
 
 
 class SearchIndex:
-    """Удобный фасад: БД + клиент + все виды поиска."""
+    """Convenient facade: database + client + all search modes."""
 
     def __init__(
         self,
@@ -564,18 +564,18 @@ class SearchIndex:
 
     @add_schemafunc(ignore_args=("self",), require_all_params_in_doc=False)
     def search_text(self, query: str, limit: int = 10) -> list[Hit]:
-        """Ищет записи по смыслу текстового запроса с помощью векторного поиска.
+        """Search records by the meaning of a text query using vector search.
 
-        Используй этот метод, когда нужен семантический поиск: запрос и записи
-        могут не совпадать по словам, но совпадать по значению (например,
-        "чёрный вентилятор" найдёт `dndecor:black_large_fan`).
+        Use this method for semantic search: the query and records may not share
+        words but may have the same meaning (for example, "black fan" will find
+        `dndecor:black_large_fan`).
 
         Args:
-            query: Текстовый запрос на естественном языке.
-            limit: Максимальное количество результатов (по умолчанию 10).
+            query: Natural-language search query.
+            limit: Maximum number of results (default 10).
 
         Returns:
-            Список Hit, отсортированный по убыванию score (0..1).
+            A list of Hit objects sorted by descending score (0..1).
         """
         if not query.strip():
             raise ValueError("пустой запрос")
@@ -588,20 +588,20 @@ class SearchIndex:
         limit: int = 10,
         model: str | None = None,
     ) -> list[Hit]:
-        """Ищет записи, похожие на изображение, через мультимодальный эмбеддинг.
+        """Search records similar to an image using multimodal embeddings.
 
         Args:
-            source: Путь к файлу изображения. Также принимаются pathlib.Path
-                и сырые bytes, но для LLM-схемы тип указан как строка.
-            limit: Максимальное количество результатов (по умолчанию 10).
-            model: Необязательное имя модели для эмбеддинга изображений.
+            source: Path to an image file. pathlib.Path and raw bytes are also
+                accepted at runtime, but the LLM schema declares this as a string.
+            limit: Maximum number of results (default 10).
+            model: Optional embedding model name for images.
 
         Returns:
-            Список Hit, отсортированный по убыванию score (0..1).
+            A list of Hit objects sorted by descending score (0..1).
 
         Raises:
-            ImageNotSupported: Сервер не умеет эмбеддить изображения.
-            EmbeddingError: Сетевая ошибка или несовпадение размерности.
+            ImageNotSupported: The server does not support image embeddings.
+            EmbeddingError: A network error occurred or the dimensions do not match.
         """
         vec = self.client.embed_image(source, model=model)
         if vec is None:
@@ -623,15 +623,15 @@ class SearchIndex:
         field: Literal["mod", "id", "full"] = "full",
         limit: int = 10,
     ) -> list[Hit]:
-        """Ищет точное вхождение подстроки в выбранном поле.
+        """Search for an exact substring match in the selected field.
 
         Args:
-            query: Подстрока для поиска (без учёта регистра).
-            field: Поле для поиска: "full", "mod" или "id".
-            limit: Максимальное количество результатов (по умолчанию 10).
+            query: Substring to search for (case-insensitive).
+            field: Field to search: "full", "mod", or "id".
+            limit: Maximum number of results (default 10).
 
         Returns:
-            Список Hit, отсортированный по убыванию score (0..1).
+            A list of Hit objects sorted by descending score (0..1).
         """
         return text_search(self.db, query, field, limit)
 
@@ -642,18 +642,18 @@ class SearchIndex:
         field: Literal["mod", "id", "full"] = "full",
         limit: int = 10,
     ) -> list[Hit]:
-        """Ищет записи нечётким (fuzzy) сравнением строк.
+        """Search records using fuzzy string matching.
 
-        Полезно при опечатках и неточных названиях: "blak fan" найдёт
+        Useful for typos and imprecise names: "blak fan" will find
         `dndecor:black_large_fan`.
 
         Args:
-            query: Неточный запрос.
-            field: Поле для сравнения: "full", "mod" или "id".
-            limit: Максимальное количество результатов (по умолчанию 10).
+            query: Imprecise query.
+            field: Field to compare: "full", "mod", or "id".
+            limit: Maximum number of results (default 10).
 
         Returns:
-            Список Hit, отсортированный по убыванию score (0..1).
+            A list of Hit objects sorted by descending score (0..1).
         """
         return fuzzy_search(self.db, query, field, limit)
 
@@ -677,10 +677,10 @@ _SEARCH_METHODS = (
 
 
 def search_tool_schemas() -> list[dict]:
-    """Возвращает OpenAI-совместимые схемы всех четырёх поисковых методов.
+    """Return OpenAI-compatible schemas for all four search methods.
 
     Returns:
-        Список JSON-схем вида {"type": "function", "function": {...}},
-        готовый для параметра tools в Chat Completions API.
+        A list of JSON schemas of the form {"type": "function", "function": {...}},
+        ready for the tools parameter of the Chat Completions API.
     """
     return [method.schemafunc.openai.schema for method in _SEARCH_METHODS]
