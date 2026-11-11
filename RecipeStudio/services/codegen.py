@@ -79,6 +79,8 @@ def build_export(
         remove_line = f"{event_var}.remove({{ output: {target} }});"
 
     if not wrap:
+        if remove_line:
+            return remove_line + "\n\n" + body + "\n"
         return body + "\n"
 
     lines = ["ServerEvents.recipes((event) => {"]

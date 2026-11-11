@@ -70,6 +70,7 @@ class Slot(tk.Frame):
         self.canvas.pack(fill="both", expand=True)
 
         self.canvas.bind("<Button-1>", self._left_click)
+        self.canvas.bind("<Button-2>", self._middle_click)
         self.canvas.bind("<Button-3>", self._right_click)
         self.canvas.bind("<Enter>", self._enter)
         self.canvas.bind("<Leave>", self._leave)
@@ -114,31 +115,49 @@ class Slot(tk.Frame):
         kind = "fluid" if entry.kind == "fluid" else "item"
         self.set_ingredient(Ingredient(kind=kind, id=entry.id, count=1), notify=notify)
 
-    def set_from_drop(self, payload) -> None:
+    def set_from_drop(self, payload) -> bool:
+        """Apply a palette entry or a picked slot ingredient.
+
+        Returns ``True`` when the payload was accepted, so the caller can keep
+        or clear an active eyedropper pick.
+        """
         if isinstance(payload, CatalogEntry):
             if not self.accepts_entry(payload):
-                return
+                return False
             self.set_from_entry(payload)
-        elif isinstance(payload, Ingredient):
-            if self.allow_fluid:
-                if payload.kind == "fluid":
-                    return
-                if payload.kind != "item" or not is_bucket_id(payload.id):
-                    return
-                amount = (
+            return True
+        if not isinstance(payload, Ingredient):
+            return False
+        if self.allow_fluid:
+            if payload.kind == "fluid":
+                amount = payload.amount or (
                     self.ingredient.amount if self.ingredient.kind == "fluid" else 1000
                 )
                 self.set_ingredient(
                     Ingredient(
                         kind="fluid",
-                        id=fluid_id_from_bucket(payload.id),
+                        id=normalize_fluid_id(payload.id),
                         amount=amount,
                     )
                 )
-                return
-            if payload.kind == "fluid":
-                return
-            self.set_ingredient(payload)
+                return True
+            if payload.kind != "item" or not is_bucket_id(payload.id):
+                return False
+            amount = self.ingredient.amount if self.ingredient.kind == "fluid" else 1000
+            self.set_ingredient(
+                Ingredient(
+                    kind="fluid",
+                    id=fluid_id_from_bucket(payload.id),
+                    amount=amount,
+                )
+            )
+            return True
+        if payload.kind == "fluid":
+            return False
+        if payload.kind == "tag" and not self.allow_tag:
+            return False
+        self.set_ingredient(payload)
+        return True
 
     def accepts_entry(self, entry: CatalogEntry) -> bool:
         if self.allow_fluid:
@@ -250,6 +269,10 @@ class Slot(tk.Frame):
     # ------------------------------------------------------------------
     def _left_click(self, _event=None) -> str:
         self.app.on_slot_left_click(self)
+        return "break"
+
+    def _middle_click(self, _event=None) -> str:
+        self.app.pick_slot_ingredient(self)
         return "break"
 
     def _right_click(self, _event=None) -> str:

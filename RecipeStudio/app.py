@@ -44,6 +44,7 @@ class RecipeStudioApp(ctk.CTk):
         self.drag_manager = DragManager(self)
 
         self.palette_selection: CatalogEntry | None = None
+        self.slot_pick: Ingredient | None = None
         self.hovered_entry: CatalogEntry | None = None
         self.hovered_slot: Slot | None = None
         self.drag_target_slot: Slot | None = None
@@ -147,7 +148,7 @@ class RecipeStudioApp(ctk.CTk):
 
         ctk.CTkLabel(
             left,
-            text="Click to select · drag to a slot · A favourite · Ctrl+A / ★ favourites · Esc exits",
+            text="Click select · drag to slot · middle-click slot picks · A favourite · Ctrl+A / ★ favourites · Esc exits",
             text_color=COLORS["text_dim"],
             font=("DejaVu Sans", 9),
         ).grid(row=3, column=0, pady=(2, 8))
@@ -330,11 +331,20 @@ class RecipeStudioApp(ctk.CTk):
             self.item_grid.set_selected(None)
             self.set_status("Selection cleared")
             return
+        self.slot_pick = None
         self.palette_selection = entry
         self.item_grid.set_selected(entry.id)
         self.set_status(f"Selected {entry.id} — click a slot or drag it there")
 
     def on_slot_left_click(self, slot: Slot) -> None:
+        if self.slot_pick is not None:
+            pick = self.slot_pick
+            if slot.set_from_drop(pick):
+                self.slot_pick = None
+                self.set_status(f"Pasted {pick.label()}")
+            else:
+                self.set_status(f"This slot cannot accept {pick.label()}", error=True)
+            return
         if self.palette_selection is not None:
             slot.set_from_entry(self.palette_selection)
             return
@@ -342,6 +352,19 @@ class RecipeStudioApp(ctk.CTk):
             slot.clear()
             return
         self.open_slot_settings(slot)
+
+    def pick_slot_ingredient(self, slot: Slot) -> None:
+        """Middle-click eyedropper: copy a slot's ingredient to paste elsewhere."""
+        if slot.is_empty:
+            self.slot_pick = None
+            self.set_status("Eyedropper cleared")
+            return
+        self.slot_pick = slot.ingredient.copy()
+        self.palette_selection = None
+        self.item_grid.set_selected(None)
+        self.set_status(
+            f"Picked {self.slot_pick.label()} — click a slot to paste, Esc to cancel"
+        )
 
     def open_slot_settings(self, slot: Slot) -> None:
         SlotSettingsDialog(slot)
@@ -427,7 +450,7 @@ class RecipeStudioApp(ctk.CTk):
             errors.append(f"{type(exc).__name__}: {exc}")
 
         remove = bool(self.export_panel.remove_var.get() or force_remove)
-        wrap = bool(self.export_panel.wrap_var.get() or remove)
+        wrap = bool(self.export_panel.wrap_var.get())
         override = self.export_panel.get_override()
         main = editor.main_output()
         remove_filter = (
@@ -543,6 +566,10 @@ class RecipeStudioApp(ctk.CTk):
         if self.palette_selection is not None:
             self.palette_selection = None
             self.item_grid.set_selected(None)
+            return "break"
+        if self.slot_pick is not None:
+            self.slot_pick = None
+            self.set_status("Eyedropper cleared")
             return "break"
         if self.favorites_only:
             self.toggle_favorites_only()

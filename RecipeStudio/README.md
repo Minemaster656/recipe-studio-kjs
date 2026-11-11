@@ -30,6 +30,10 @@ If the environment is already prepared, `uv sync` then `uv run …` works too.
 The `★` button next to the palette counter toggles favourites-only mode as
 well, so it can always be switched off without using the keyboard.
 
+Middle-click a filled slot to pick its ingredient (eyedropper), then
+left-click another slot to paste it. Counts, fluid amounts, chances, NBT and
+tags are preserved; `Esc` cancels the pick.
+
 Search modes: `S` substring, `F` fuzzy, `E` embeddings (text or an image path).
 `S` and `F` fall back to the local catalogue if the vector DB is unavailable.
 
