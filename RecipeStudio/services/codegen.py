@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from RecipeStudio.model.ingredient import Ingredient
+from RecipeStudio.model.ingredient import Ingredient, normalize_fluid_id
 
 
 def quote(value: str) -> str:
@@ -32,6 +32,7 @@ def item_literal(ing: Ingredient, *, output: bool = False) -> str | None:
         return quote(rid)
 
     if ing.kind == "fluid":
+        rid = normalize_fluid_id(rid)
         amount = int(ing.amount or 1000)
         return f"Fluid.of({quote(rid)}, {amount})"
 
@@ -72,7 +73,7 @@ def build_export(
         if remove_filter.kind == "tag":
             target = quote("#" + remove_filter.id.lstrip("#"))
         elif remove_filter.kind == "fluid":
-            target = quote(remove_filter.id)
+            target = quote(normalize_fluid_id(remove_filter.id))
         else:
             target = quote(remove_filter.id)
         remove_line = f"{event_var}.remove({{ output: {target} }});"

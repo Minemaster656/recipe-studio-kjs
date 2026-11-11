@@ -10,7 +10,7 @@ import customtkinter as ctk
 from RecipeStudio.components.create_widgets import IngredientGroup
 from RecipeStudio.components.slot import Slot
 from RecipeStudio.components.time_field import TimeField
-from RecipeStudio.model.ingredient import Ingredient
+from RecipeStudio.model.ingredient import Ingredient, normalize_fluid_id
 from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
@@ -24,7 +24,7 @@ def ingredient_json(ing: Ingredient) -> dict:
     if ing.kind == "fluid":
         return {
             "type": "neoforge:single",
-            "fluid": ing.id,
+            "fluid": normalize_fluid_id(ing.id),
             "amount": int(ing.amount or 1000),
         }
     data = {"item": ing.id}
@@ -35,7 +35,7 @@ def ingredient_json(ing: Ingredient) -> dict:
 
 def result_json(ing: Ingredient) -> dict:
     if ing.kind == "fluid":
-        return {"id": ing.id, "amount": int(ing.amount or 1000)}
+        return {"id": normalize_fluid_id(ing.id), "amount": int(ing.amount or 1000)}
     data = {"id": ing.id}
     if ing.count > 1:
         data["count"] = int(ing.count)

@@ -9,6 +9,26 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 
+FLUID_BUCKET_SUFFIX = "_bucket"
+
+
+def is_bucket_id(item_id: str) -> bool:
+    return str(item_id).endswith(FLUID_BUCKET_SUFFIX)
+
+
+def fluid_id_from_bucket(item_id: str) -> str:
+    """``minecraft:water_bucket`` -> ``minecraft:water``."""
+    value = str(item_id).strip()
+    if value.endswith(FLUID_BUCKET_SUFFIX):
+        return value[: -len(FLUID_BUCKET_SUFFIX)]
+    return value
+
+
+def normalize_fluid_id(fluid_id: str) -> str:
+    """Accept either a fluid id or a bucket id and return the fluid id."""
+    return fluid_id_from_bucket(fluid_id)
+
+
 @dataclass
 class Ingredient:
     kind: str = "empty"  # empty | item | tag | fluid

@@ -30,6 +30,10 @@ If the environment is already prepared, `uv sync` then `uv run …` works too.
 Search modes: `S` substring, `F` fuzzy, `E` embeddings (text or an image path).
 `S` and `F` fall back to the local catalogue if the vector DB is unavailable.
 
+Fluid slots accept NeoForge bucket items from the palette (for example
+`minecraft:water_bucket`) and store/export the fluid id without the suffix
+(`minecraft:water`). The vector DB indexes buckets rather than fluid ids.
+
 ## Adding a recipe type
 
 Create a file under `RecipeStudio/recipes/` (for example `recipes/create/pressing.py`):

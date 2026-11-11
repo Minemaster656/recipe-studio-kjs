@@ -278,3 +278,11 @@ Notes:
 All shared widgets and modules above are implemented, including 9×9
 mechanical crafting and sequenced assembly with loops/scrap. The optional
 1.20.1 syntax switch and bulk smelting/blasting remain backlog.
+
+## Fluid slots and buckets
+
+The vector DB indexes NeoForge's generated bucket items (`mod:liquid_bucket`),
+not fluid registry ids. Fluid slots therefore accept **bucket items only**
+from the catalogue, display the corresponding fluid icon, and normalize the
+stored id on export: `create:honey_bucket` -> `Fluid.of('create:honey', 1000)`.
+Actual fluid catalogue entries are rejected by fluid slots.

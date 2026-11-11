@@ -8,7 +8,12 @@ from typing import Callable
 import customtkinter as ctk
 
 from RecipeStudio.components.number_field import NumberField
-from RecipeStudio.model.ingredient import Ingredient
+from RecipeStudio.model.ingredient import (
+    Ingredient,
+    fluid_id_from_bucket,
+    is_bucket_id,
+    normalize_fluid_id,
+)
 from RecipeStudio.services.catalog import CatalogEntry
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
@@ -82,6 +87,8 @@ class Slot(tk.Frame):
 
     def set_ingredient(self, ing: Ingredient, *, notify: bool = True) -> None:
         self.ingredient = ing.copy()
+        if self.ingredient.kind == "fluid":
+            self.ingredient.id = normalize_fluid_id(self.ingredient.id)
         if self.ingredient.kind == "item" and self.ingredient.count < 1:
             self.ingredient.count = 1
         self._draw()
@@ -89,20 +96,55 @@ class Slot(tk.Frame):
             self._changed()
 
     def set_from_entry(self, entry: CatalogEntry, *, notify: bool = True) -> None:
+        if self.allow_fluid:
+            # The vector DB indexes NeoForge's generated buckets, not fluids.
+            # A fluid slot therefore accepts bucket items and stores the fluid id.
+            if entry.kind == "fluid" or not is_bucket_id(entry.id):
+                return
+            amount = self.ingredient.amount if self.ingredient.kind == "fluid" else 1000
+            self.set_ingredient(
+                Ingredient(
+                    kind="fluid",
+                    id=fluid_id_from_bucket(entry.id),
+                    amount=amount,
+                ),
+                notify=notify,
+            )
+            return
         kind = "fluid" if entry.kind == "fluid" else "item"
         self.set_ingredient(Ingredient(kind=kind, id=entry.id, count=1), notify=notify)
 
     def set_from_drop(self, payload) -> None:
         if isinstance(payload, CatalogEntry):
-            if payload.kind == "fluid" and not self.allow_fluid:
+            if not self.accepts_entry(payload):
                 return
             self.set_from_entry(payload)
         elif isinstance(payload, Ingredient):
+            if self.allow_fluid:
+                if payload.kind == "fluid":
+                    return
+                if payload.kind != "item" or not is_bucket_id(payload.id):
+                    return
+                amount = (
+                    self.ingredient.amount if self.ingredient.kind == "fluid" else 1000
+                )
+                self.set_ingredient(
+                    Ingredient(
+                        kind="fluid",
+                        id=fluid_id_from_bucket(payload.id),
+                        amount=amount,
+                    )
+                )
+                return
+            if payload.kind == "fluid":
+                return
             self.set_ingredient(payload)
 
     def accepts_entry(self, entry: CatalogEntry) -> bool:
+        if self.allow_fluid:
+            return entry.kind != "fluid" and is_bucket_id(entry.id)
         if entry.kind == "fluid":
-            return self.allow_fluid
+            return False
         return True
 
     def set_drop_target(self, active: bool) -> None:
@@ -299,11 +341,9 @@ class SlotSettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             self, text="Kind", anchor="w", text_color=COLORS["text_muted"]
         ).grid(row=row, column=0, sticky="w", padx=(pad, 8), pady=(pad, 4))
-        values = ["Item"]
-        if self.slot.allow_tag:
+        values = ["Fluid"] if self.slot.allow_fluid else ["Item"]
+        if not self.slot.allow_fluid and self.slot.allow_tag:
             values.append("Tag")
-        if self.slot.allow_fluid:
-            values.append("Fluid")
         self.kind_btn = ctk.CTkSegmentedButton(
             self,
             values=values,
@@ -450,7 +490,7 @@ class SlotSettingsDialog(ctk.CTkToplevel):
         elif kind == "Tag":
             self.id_entry.configure(placeholder_text="#mod:tag/path")
         else:
-            self.id_entry.configure(placeholder_text="mod:fluid")
+            self.id_entry.configure(placeholder_text="mod:fluid_bucket")
         show_count = self.slot.allow_count and kind != "Tag"
         self._show_row(self.count_label_row, show_count)
         self._show_row(self.chance_label_row, self.slot.allow_chance)
@@ -486,6 +526,8 @@ class SlotSettingsDialog(ctk.CTkToplevel):
             self.slot.clear()
             self.destroy()
             return
+        if kind == "fluid":
+            raw_id = normalize_fluid_id(raw_id)
         count = self.count.get_value() or 1
         chance = self.chance.get_value()
         amount = self.amount.get_value() if kind == "fluid" else None
