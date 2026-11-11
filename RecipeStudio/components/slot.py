@@ -69,8 +69,8 @@ class Slot(tk.Frame):
         self.canvas.bind("<Enter>", self._enter)
         self.canvas.bind("<Leave>", self._leave)
         self.canvas.bind("<MouseWheel>", self._wheel)
-        self.canvas.bind("<Button-4>", lambda e: self.adjust_count(1))
-        self.canvas.bind("<Button-5>", lambda e: self.adjust_count(-1))
+        self.canvas.bind("<Button-4>", lambda e: self._wheel_delta(1, e))
+        self.canvas.bind("<Button-5>", lambda e: self._wheel_delta(-1, e))
 
         self.app.register_slot(self)
         self._draw()
@@ -235,7 +235,22 @@ class Slot(tk.Frame):
 
     def _wheel(self, event) -> str:
         if event.delta:
-            self.adjust_count(1 if event.delta > 0 else -1)
+            self._wheel_delta(1 if event.delta > 0 else -1, event)
+        return "break"
+
+    def _wheel_delta(self, delta: int, event=None) -> str:
+        alt = bool(event is not None and (event.state & (0x0008 | 0x20000)))
+        if alt and self.allow_chance and not self.ingredient.is_empty:
+            chance = self.ingredient.chance
+            if chance is None:
+                chance = 1.0
+            step = 0.001 if chance < 0.01 else 0.01
+            chance = round(max(0.001, min(1.0, chance + step * delta)), 3)
+            self.ingredient.chance = chance
+            self._draw()
+            self._changed()
+            return "break"
+        self.adjust_count(delta)
         return "break"
 
     def _tooltip_text(self) -> str:

@@ -1,0 +1,1 @@
+"""Create addon recipe modules."""

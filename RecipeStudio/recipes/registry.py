@@ -45,8 +45,8 @@ def discover_modules(config: Config) -> tuple[list, list[ModuleLoadError]]:
 
     modules.sort(
         key=lambda m: (
-            getattr(m, "category", ""),
             getattr(m, "order", 100),
+            getattr(m, "category", ""),
             getattr(m, "title", ""),
         )
     )

@@ -70,6 +70,15 @@ icon = Path(__file__).with_name("icons") / "pressing.png"
 
 The vanilla handlers use files in `recipes/vanilla/icons/`.
 
+## Included modules
+
+Vanilla: Crafting (shaped/shapeless), Smelting, Blasting, Smoking, Campfire
+Cooking, Stonecutting, Smithing.
+
+Create: Compacting, Milling, Crushing, Cutting, Deploying, Emptying, Filling,
+Haunting, Splashing, Mixing, Pressing, Sandpaper Polishing, Mechanical
+Crafting (up to 9×9), Sequenced Assembly.
+
 ## Layout
 
 - `app.py` — window, hotkeys, wiring
