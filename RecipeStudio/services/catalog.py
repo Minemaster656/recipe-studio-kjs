@@ -1,8 +1,7 @@
-"""Item/fluid catalogue built from all_items.json and the icon export."""
+"""Item/fluid catalogue built from the icon export."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,29 +55,25 @@ class Catalog:
             self.fluids.append(entry)
             self.fluids_by_id[full] = entry
 
-        raw_items: list[str] = []
-        try:
-            data = json.loads(
-                self.config.path_for("items_json").read_text(encoding="utf-8")
-            )
-            if isinstance(data, list):
-                raw_items = [str(x) for x in data if isinstance(x, str) and ":" in x]
-        except OSError, json.JSONDecodeError:
-            raw_items = []
-
-        seen: set[str] = set()
-        for full in raw_items:
-            if full in seen:
+        # Items come from the icon export, so every catalogue entry has a real
+        # texture.  The exporter writes "modid__item_id.png"; an NBT/component
+        # suffix ("__{...}") is cut off and collisions are collapsed.
+        for name in sorted(icon_files):
+            stem = name[: -len(".png")]
+            if stem.startswith("fluid__"):
+                rest = stem[len("fluid__") :]
+                if "__" in rest:
+                    continue  # fluid icon, already handled above
+            if "__" not in stem:
                 continue
-            seen.add(full)
-            mod, path = full.split(":", 1)
-            icon = icon_files.get(f"{mod}__{path}.png")
-            # all_items.json also contains fluid registry names.  If such an
-            # id has no item icon but does have a fluid icon, keep it in the
-            # fluid list only.
-            if icon is None and full in self.fluids_by_id:
+            mod, rest = stem.split("__", 1)
+            item_path = rest.split("__{", 1)[0]
+            if not mod or not item_path:
                 continue
-            entry = CatalogEntry(full, mod, path, "item", icon)
+            full = f"{mod}:{item_path}"
+            if full in self.by_id:
+                continue
+            entry = CatalogEntry(full, mod, item_path, "item", icon_files[name])
             self.items.append(entry)
             self.by_id[full] = entry
 
