@@ -18,3 +18,9 @@ wheels/
 embeddings.db
 RecipeStudio/data/favorites.json
 dist/
+
+# Local DB backups
+embeddings.db.bak
+
+# Editor session state
+Session.vim
