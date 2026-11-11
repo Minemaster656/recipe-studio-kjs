@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 import tkinter as tk
 
 import customtkinter as ctk
@@ -217,6 +218,7 @@ class CraftingModule(RecipeModule):
     title = "Crafting"
     order = 10
     description = "Shaped or shapeless crafting table recipe"
+    icon = Path(__file__).with_name("icons") / "crafting_table.png"
 
     def create_editor(self, parent, ctx: EditorContext) -> RecipeEditor:
         return CraftingEditor(parent, ctx, self)

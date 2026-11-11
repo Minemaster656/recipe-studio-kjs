@@ -56,6 +56,10 @@ class SearchBar(ctk.CTkFrame):
         self.entry.bind("<KeyRelease>", self._on_key)
         self.entry.bind("<Return>", self._immediate)
         self.entry.bind("<Escape>", self._escape)
+        inner = getattr(self.entry, "_entry", self.entry)
+        for widget in {self.entry, inner}:
+            widget.bind("<Control-BackSpace>", self._delete_prev_word, add="+")
+            widget.bind("<Control-Delete>", self._delete_next_word, add="+")
         self.mode_button.bind("<Enter>", self._mode_tooltip)
         self.mode_button.bind("<Leave>", lambda e: self.app.tooltip.hide())
 
@@ -100,6 +104,43 @@ class SearchBar(ctk.CTkFrame):
         return focus is self.entry or (inner is not None and focus is inner)
 
     # ------------------------------------------------------------------
+    def _inner_entry(self):
+        return getattr(self.entry, "_entry", self.entry)
+
+    def _delete_prev_word(self, _event=None) -> str:
+        entry = self._inner_entry()
+        try:
+            pos = int(entry.index("insert"))
+            text = entry.get()
+        except Exception:
+            return "break"
+        start = pos
+        while start > 0 and text[start - 1].isspace():
+            start -= 1
+        while start > 0 and not text[start - 1].isspace():
+            start -= 1
+        if start < pos:
+            entry.delete(start, pos)
+            self._schedule()
+        return "break"
+
+    def _delete_next_word(self, _event=None) -> str:
+        entry = self._inner_entry()
+        try:
+            pos = int(entry.index("insert"))
+            text = entry.get()
+        except Exception:
+            return "break"
+        end = pos
+        while end < len(text) and text[end].isspace():
+            end += 1
+        while end < len(text) and not text[end].isspace():
+            end += 1
+        if end > pos:
+            entry.delete(pos, end)
+            self._schedule()
+        return "break"
+
     def _on_key(self, event) -> None:
         if event.keysym in (
             "Return",

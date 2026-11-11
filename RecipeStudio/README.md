@@ -18,6 +18,8 @@ If the environment is already prepared, `uv sync` then `uv run …` works too.
 | --- | --- |
 | `Ctrl+F` | Focus search; press again to return to the item grid |
 | `Ctrl+Shift+F` | Cycle search mode `S` → `F` → `E` |
+| `Ctrl+Backspace` | Delete the previous word in the search field |
+| `Ctrl+Delete` | Delete the next word in the search field |
 | `Ctrl+E` | Copy the recipe |
 | `Ctrl+Shift+E` | Copy the recipe with the original-recipe removal line |
 | `Ctrl+A` | Show only favourites (when text input is not focused) |
@@ -56,6 +58,17 @@ MODULE = PressingModule()
 
 It is discovered automatically. Disable a module by adding its id to
 `RecipeStudio/config.json` → `disabled_modules`.
+
+Tab icons are owned by the handler, not by the shared item catalogue. Put a
+small PNG next to the module and point to it from the class:
+
+```python
+from pathlib import Path
+
+icon = Path(__file__).with_name("icons") / "pressing.png"
+```
+
+The vanilla handlers use files in `recipes/vanilla/icons/`.
 
 ## Layout
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import customtkinter as ctk
@@ -62,6 +63,9 @@ class RecipeModule:
     order: int = 100
     category: str = "vanilla"
     description: str = ""
+    # Each handler ships its own small icon next to its code; do not depend on
+    # the shared item catalogue for these.
+    icon: Path | None = None
 
     def create_editor(self, parent, ctx: EditorContext) -> RecipeEditor:
         raise NotImplementedError

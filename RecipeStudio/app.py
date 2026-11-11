@@ -62,6 +62,7 @@ class RecipeStudioApp(ctk.CTk):
         self._all_entries: list[CatalogEntry] = []
         self._search_gen = 0
         self.favorites_only = False
+        self._tab_images: list[ctk.CTkImage] = []
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -151,11 +152,16 @@ class RecipeStudioApp(ctk.CTk):
         self.tabbar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         self.tab_buttons: dict[str, ctk.CTkButton] = {}
         for module in self.modules:
+            image = self._load_tab_icon(module)
+            width = max(80, len(module.title) * 8 + 26) + (24 if image else 0)
             btn = ctk.CTkButton(
                 self.tabbar,
                 text=module.title,
+                image=image,
+                compound="left",
+                anchor="w",
                 height=30,
-                width=max(80, len(module.title) * 8 + 26),
+                width=width,
                 corner_radius=8,
                 fg_color=COLORS["panel_alt"],
                 hover_color=COLORS["panel_hover"],
@@ -182,6 +188,22 @@ class RecipeStudioApp(ctk.CTk):
             font=FONT_UI_SMALL,
         )
         self.status_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(2, 6))
+
+    # ------------------------------------------------------------------
+    def _load_tab_icon(self, module):
+        path = getattr(module, "icon", None)
+        if path is None:
+            return None
+        try:
+            from PIL import Image
+
+            with Image.open(path) as source:
+                image = source.convert("RGBA")
+            ctk_image = ctk.CTkImage(light_image=image, dark_image=image, size=(18, 18))
+            self._tab_images.append(ctk_image)
+            return ctk_image
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     def show_module(self, module) -> None:

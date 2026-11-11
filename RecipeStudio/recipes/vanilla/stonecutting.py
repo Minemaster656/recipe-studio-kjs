@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import customtkinter as ctk
 
 from RecipeStudio.components.slot import Slot
@@ -110,6 +112,7 @@ class StonecuttingModule(RecipeModule):
     title = "Stonecutting"
     order = 60
     description = "Stonecutter recipe"
+    icon = Path(__file__).with_name("icons") / "stonecutter.png"
 
     def create_editor(self, parent, ctx: EditorContext) -> RecipeEditor:
         return StonecuttingEditor(parent, ctx, self)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import customtkinter as ctk
 
 from RecipeStudio.components.slot import Slot
@@ -135,6 +137,7 @@ class SmithingModule(RecipeModule):
     title = "Smithing"
     order = 70
     description = "Smithing table: template + base + addition -> output"
+    icon = Path(__file__).with_name("icons") / "smithing_table.png"
 
     def create_editor(self, parent, ctx: EditorContext) -> RecipeEditor:
         return SmithingEditor(parent, ctx, self)

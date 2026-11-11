@@ -15,19 +15,26 @@ class Tooltip:
         self.text = ""
         self._after = None
 
-    def show(self, text: str, x_root: int, y_root: int, delay: int = 350) -> None:
+    def show(
+        self,
+        text: str,
+        x_root: int | None = None,
+        y_root: int | None = None,
+        delay: int = 350,
+    ) -> None:
         if not text:
             self.hide()
             return
         self._cancel()
-        self._after = self.app.after(
-            delay, lambda: self._show_now(text, x_root, y_root)
-        )
+        # Always place the tooltip at the *current* pointer position when it
+        # actually appears.  Cached event coordinates go stale while the
+        # 350 ms delay is running and can even be (0, 0) for synthetic events.
+        self._after = self.app.after(delay, lambda: self._show_now(text))
 
-    def _show_now(self, text: str, x_root: int, y_root: int) -> None:
+    def _show_now(self, text: str) -> None:
         self._after = None
         if self.top is not None and self.text == text:
-            self._move(x_root, y_root)
+            self._move_to_pointer()
             return
         self.hide()
         self.text = text
@@ -51,20 +58,42 @@ class Tooltip:
             wraplength=380,
         )
         self.label.pack(padx=1, pady=1)
+        self._move_to_pointer()
+
+    def _move_to_pointer(self) -> None:
+        try:
+            x_root, y_root = self.app.winfo_pointerxy()
+        except tk.TclError:
+            return
         self._move(x_root, y_root)
 
     def _move(self, x_root: int, y_root: int) -> None:
         if self.top is None:
             return
-        self.top.update_idletasks()
-        w = max(1, self.top.winfo_reqwidth())
-        h = max(1, self.top.winfo_reqheight())
-        sw = self.top.winfo_screenwidth()
-        sh = self.top.winfo_screenheight()
-        x = min(x_root + 16, sw - w - 8)
-        y = min(y_root + 18, sh - h - 8)
-        x = max(0, x)
-        y = max(0, y)
+        try:
+            self.top.update_idletasks()
+        except tk.TclError:
+            self.top = None
+            self.label = None
+            self.text = ""
+            return
+        w = max(1, self.top.winfo_width(), self.top.winfo_reqwidth())
+        h = max(1, self.top.winfo_height(), self.top.winfo_reqheight())
+        # Virtual root covers all monitors; winfo_screenwidth() only covers
+        # the primary one and would clamp negative secondary-monitor coords
+        # to (0, 0).
+        sx = self.top.winfo_vrootx()
+        sy = self.top.winfo_vrooty()
+        sw = self.top.winfo_vrootwidth()
+        sh = self.top.winfo_vrootheight()
+        x = x_root + 16
+        y = y_root + 18
+        if x + w > sx + sw - 8:
+            x = x_root - w - 12
+        if y + h > sy + sh - 8:
+            y = y_root - h - 12
+        x = max(sx + 4, x)
+        y = max(sy + 4, y)
         self.top.geometry(f"+{x}+{y}")
 
     def hide(self) -> None:
