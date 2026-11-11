@@ -1,0 +1,17 @@
+{
+  "database": "embeddings.db",
+  "base_url": "http://127.0.0.1:9931/v1",
+  "embedding_model": "embeddinggemma2",
+  "items_json": "all_items.json",
+  "icons_dir": "icon-exports-x32",
+  "mods_dir": "../mods",
+  "kubejs_dir": "../kubejs",
+  "extra_lang_jars": [
+    "../../../../versions/*/*.jar"
+  ],
+  "favorites": "RecipeStudio/data/favorites.json",
+  "names_cache": "RecipeStudio/data/names_cache.json",
+  "search_limit": 500,
+  "disabled_modules": [],
+  "start_maximized": false
+}
