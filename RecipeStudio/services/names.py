@@ -45,74 +45,78 @@ class NameResolver:
             self.names = {}
             self.signature = []
 
-    def _current_signature(self) -> list[list]:
+    def _collect_sources(self) -> list[Path]:
+        """Return every file that can provide English display names."""
         paths: list[Path] = []
         mods_dir = self.config.path_for("mods_dir")
         try:
             paths.extend(sorted(mods_dir.glob("*.jar")))
         except OSError:
             pass
+
         kubejs = self.config.path_for("kubejs_dir")
         try:
             paths.extend(sorted((kubejs / "assets").glob("*/lang/en_us.json")))
         except OSError:
             pass
+
         for pattern in self.config.get("extra_lang_jars", []) or []:
             for raw in glob.glob(str(SCRIPTS_DIR / str(pattern))):
                 p = Path(raw)
                 if p.is_file():
                     paths.append(p)
-        sig: list[list] = []
+
+        unique: list[Path] = []
         seen: set[str] = set()
         for p in paths:
+            try:
+                key = str(p.resolve())
+            except OSError:
+                key = str(p)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(p)
+        return unique
+
+    def _current_signature(self) -> list[list]:
+        sig: list[list] = []
+        for p in self._collect_sources():
             try:
                 st = p.stat()
             except OSError:
                 continue
-            key = str(p)
-            if key in seen:
-                continue
-            seen.add(key)
-            sig.append([key, int(st.st_mtime), st.st_size])
+            sig.append([str(p), int(st.st_mtime), st.st_size])
         sig.sort(key=lambda row: row[0])
         return sig
 
     def build_if_needed(self, force: bool = False) -> bool:
-        """Build the cache when jars changed.  Returns True when rebuilt."""
+        """Build the cache when jars changed.  Returns True when rebuilt.
+
+        A cache copied from another computer must survive even when that
+        computer has no mods/kubejs folders.  Without sources we keep the
+        cached names instead of overwriting them with an empty dictionary.
+        """
+        sources = self._collect_sources()
+        if not sources:
+            return False
         sig = self._current_signature()
         if not force and self.names and sig == self.signature:
             return False
-        self.build()
+        self.build(sources=sources)
         return True
 
-    def build(self) -> None:
+    def build(self, sources: list[Path] | None = None) -> None:
+        paths = self._collect_sources() if sources is None else sources
+        if not paths:
+            return
+
         names: dict[str, str] = {}
-        paths: list[Path] = []
-        try:
-            paths.extend(sorted(self.config.path_for("mods_dir").glob("*.jar")))
-        except OSError:
-            pass
-
-        kubejs = self.config.path_for("kubejs_dir")
-        try:
-            for p in sorted((kubejs / "assets").glob("*/lang/en_us.json")):
-                self._read_lang_file(p, names)
-        except OSError:
-            pass
-
-        for pattern in self.config.get("extra_lang_jars", []) or []:
-            for raw in glob.glob(str(SCRIPTS_DIR / str(pattern))):
-                p = Path(raw)
-                if p.is_file():
-                    paths.append(p)
-
-        seen: set[str] = set()
-        for jar in paths:
-            key = str(jar)
-            if key in seen:
-                continue
-            seen.add(key)
-            self._read_jar(jar, names)
+        for path in paths:
+            if path.suffix.lower() == ".json":
+                self._read_lang_file(path, names)
+            else:
+                self._read_jar(path, names)
 
         self.names = names
         self.signature = self._current_signature()

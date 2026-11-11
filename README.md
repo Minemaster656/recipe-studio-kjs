@@ -3,6 +3,11 @@
 Семантический поиск по `embeddings.db` через локальный OpenAI-совместимый
 embedding-сервер (llama.cpp с `--embeddings --mmproj`, vLLM, infinity, tei и т.п.).
 
+## Windows
+
+See [WINDOWS.md](WINDOWS.md) for building and running a portable Windows
+bundle (`python package_windows.py`).
+
 ## CLI
 
 ```bash

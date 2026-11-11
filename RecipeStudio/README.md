@@ -25,7 +25,10 @@ If the environment is already prepared, `uv sync` then `uv run …` works too.
 | `Ctrl+A` | Show only favourites (when text input is not focused) |
 | `A` | Toggle favourite on the hovered grid item |
 | `+` / `-` | Change the count of the hovered slot |
-| `Esc` | Leave search / clear palette selection |
+| `Esc` | Leave search / clear selection / exit favourites |
+
+The `★` button next to the palette counter toggles favourites-only mode as
+well, so it can always be switched off without using the keyboard.
 
 Search modes: `S` substring, `F` fuzzy, `E` embeddings (text or an image path).
 `S` and `F` fall back to the local catalogue if the vector DB is unavailable.

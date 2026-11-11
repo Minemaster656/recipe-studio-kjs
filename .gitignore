@@ -16,3 +16,5 @@ wheels/
 
 # Local generated data
 embeddings.db
+RecipeStudio/data/favorites.json
+dist/

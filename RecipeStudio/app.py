@@ -124,6 +124,21 @@ class RecipeStudioApp(ctk.CTk):
         )
         self.count_label.grid(row=0, column=1, sticky="e")
 
+        self.fav_button = ctk.CTkButton(
+            header,
+            text="★",
+            width=28,
+            height=22,
+            corner_radius=6,
+            fg_color=COLORS["panel_alt"],
+            hover_color=COLORS["panel_hover"],
+            text_color=COLORS["text_dim"],
+            font=("DejaVu Sans", 13, "bold"),
+            command=self.toggle_favorites_only,
+        )
+        self.fav_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self._update_fav_button()
+
         self.search_bar = SearchBar(left, self)
         self.search_bar.grid(row=1, column=0, sticky="ew", padx=12, pady=(2, 8))
 
@@ -132,7 +147,7 @@ class RecipeStudioApp(ctk.CTk):
 
         ctk.CTkLabel(
             left,
-            text="Click to select · drag to a slot · A favourite · Ctrl+A favourites only",
+            text="Click to select · drag to a slot · A favourite · Ctrl+A / ★ favourites · Esc exits",
             text_color=COLORS["text_dim"],
             font=("DejaVu Sans", 9),
         ).grid(row=3, column=0, pady=(2, 8))
@@ -382,10 +397,19 @@ class RecipeStudioApp(ctk.CTk):
         self.favorites_only = not self.favorites_only
         entries = self._filtered(self._all_entries)
         self.item_grid.set_entries(entries)
+        self._update_fav_button()
         self.set_status(
             f"Showing {len(entries)} favourites"
             if self.favorites_only
             else f"{len(entries)} items"
+        )
+
+    def _update_fav_button(self) -> None:
+        if not hasattr(self, "fav_button"):
+            return
+        self.fav_button.configure(
+            fg_color=COLORS["accent"] if self.favorites_only else COLORS["panel_alt"],
+            text_color=COLORS["panel"] if self.favorites_only else COLORS["text_dim"],
         )
 
     # ------------------------------------------------------------------
@@ -519,6 +543,9 @@ class RecipeStudioApp(ctk.CTk):
         if self.palette_selection is not None:
             self.palette_selection = None
             self.item_grid.set_selected(None)
+            return "break"
+        if self.favorites_only:
+            self.toggle_favorites_only()
             return "break"
         return None
 
