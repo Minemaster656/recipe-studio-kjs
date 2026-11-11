@@ -27,6 +27,7 @@ TOP_LEVEL_FILES = [
     "RecipeStudio",
     "src",
     "start_recipe_studio.bat",
+    "TECHNICAL.md",
     "uv.lock",
     "WINDOWS.md",
 ]

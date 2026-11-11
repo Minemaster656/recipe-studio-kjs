@@ -1,87 +1,115 @@
-# embeddings
+# Recipe Studio
 
-Семантический поиск по `embeddings.db` через локальный OpenAI-совместимый
-embedding-сервер (llama.cpp с `--embeddings --mmproj`, vLLM, infinity, tei и т.п.).
+Визуальный редактор рецептов KubeJS для Minecraft 1.21.1 (KubeJS 2101).
+Собирает рецепты мышкой и отдаёт готовый JS-код для `kubejs/server_scripts`.
 
-## Windows
+Поддерживаются ванильные рецепты и Create: crafting, smelting, blasting,
+smoking, campfire, stonecutting, smithing, compacting, milling, crushing,
+cutting, deploying, emptying, filling, haunting, splashing, mixing, pressing,
+sandpaper polishing, mechanical crafting и sequenced assembly.
 
-See [WINDOWS.md](WINDOWS.md) for building and running a portable Windows
-bundle (`python package_windows.py`).
+## Как это работает
 
-## CLI
+1. **Иконки.** Мод **IconExporter** выгружает иконки предметов в 32 пикселя в
+   папку `icon-exports-x32`. Имена файлов имеют вид `modid__item_id.png`
+   (жидкости — `fluid__modid__fluid_id.png`).
+2. **Каталог.** Из этой папки строится палитра предметов: id, мод, иконка и
+   отображаемое имя.
+3. **Поиск.** В строке поиска доступны три режима:
+   - `S` — substring по id;
+   - `F` — fuzzy (опечатки);
+   - `E` — семантический поиск по эмбеддингам, текстом или картинкой.
+4. **Эмбеддинги.** `embeddings.db` — база sqlite-vec с векторами предметов.
+   Для режима `E` нужен локальный OpenAI-совместимый сервер эмбеддингов.
+   База хранит только векторы: запрос тоже превращается в вектор на сервере.
+5. **Экспорт.** Кнопка копирует сгенерированный `event.custom({...})` (или
+   `event.shaped` и т.п.) в буфер обмена.
+
+## Что понадобится
+
+- **Python 3.14** и [uv](https://docs.astral.sh/uv/).
+- **Папка `icon-exports-x32`** — иконки, собранные модом IconExporter в 32 px.
+  Без неё программа запустится, но палитра предметов будет пустой.
+- **`embeddings.db`** — база векторов. Без неё работают режимы `S` и `F`,
+  а `E` будет недоступен.
+- **llama.cpp на порту 9931 с моделью `embeddinggemma2`** — желательно.
+  Нужен только для режима `E`; без него `S`/`F` продолжают работать.
+
+## Установка и запуск
+
+### Linux / macOS
 
 ```bash
-python embed_search.py
+uv sync
+uv run python -m RecipeStudio
 ```
 
-Меню: векторный поиск по тексту, substring, fuzzy и векторный поиск по картинке.
+Или готовый скрипт:
 
-## Как модуль
-
-```python
-from emb_api import EmbeddingClient, SearchIndex
-
-client = EmbeddingClient("http://localhost:9931/v1", "embeddinggemma2")
-idx = SearchIndex("embeddings.db", client=client)
-
-hits = idx.search_text("black fan", limit=5)
-hits = idx.search_image("/path/to/fan.jpg", limit=5)
-hits = idx.search_substring("fan", field="id", limit=5)
-hits = idx.search_fuzzy("fna", field="id", limit=5)
-
-for h in hits:
-    print(f"{h.score * 100:5.1f}%  {h.full}")
-
-idx.close()
+```bash
+./start_recipe_studio.sh
 ```
 
-Или через контекстный менеджер:
+### Windows
 
-```python
-with SearchIndex("embeddings.db", client=client) as idx:
-    hits = idx.search_image("fan.jpg")
+```bat
+start_recipe_studio.bat
 ```
 
-`Hit` — dataclass с полями `full`, `mod`, `id`, `score` (0..1) и методом
-`as_dict()`.
+Скрипт сам поставит `uv`, Python и зависимости при первом запуске (нужен
+интернет). Подробнее о переносимой сборке — в [WINDOWS.md](WINDOWS.md).
 
-## Схемы для LLM (schemafunc)
+## Подготовка иконок
 
-Методы поиска обёрнуты в `@add_schemafunc` и имеют Google-style docstrings,
-поэтому из них автоматически генерируются OpenAI-совместимые tool-схемы.
+1. Установи мод **IconExporter** в модпак.
+2. Выгрузи иконки предметов в размере **32×32**.
+3. Положи полученную папку в корень проекта под именем `icon-exports-x32`.
 
-Все четыре сразу:
+Путь можно изменить в `RecipeStudio/config.json` → `icons_dir`. Папку нужно
+класть целиком, не переименовывая файлы: из их имён строится каталог.
 
-```python
-from emb_api import search_tool_schemas
+## Сервер эмбеддингов (режим `E`)
 
-tools = search_tool_schemas()
-# response = llm.chat.completions.create(..., tools=tools)
+Достаточно любого OpenAI-совместимого embedding-сервера на
+`http://127.0.0.1:9931/v1`. Рекомендуемый вариант — llama.cpp:
+
+```bash
+llama-server \
+  --model embeddinggemma2.gguf \
+  --embeddings \
+  --mmproj mmproj.gguf \
+  --host 127.0.0.1 \
+  --port 9931
 ```
 
-Или по отдельности:
+`--mmproj` нужен только для поиска по картинке. Адрес и имя модели задаются в
+`RecipeStudio/config.json` (`base_url`, `embedding_model`).
 
-```python
-SearchIndex.search_text.schemafunc.openai.schema       # JSON Schema
-SearchIndex.search_text.schemafunc.openai_tool_kwargs  # tools + tool_choice
+## Сборка `embeddings.db`
+
+Если базы ещё нет, её можно собрать из папки с иконками:
+
+```bash
+uv run python embedder.py
 ```
 
-Схемы содержат описания параметров, значения по умолчанию и enum для `field`
-(`mod` / `id` / `full`).
+С параметрами по умолчанию: `icon-exports-x32` → `embeddings.db`,
+сервер `http://localhost:9931/v1`, модель `embeddinggemma2`.
 
-Низкоуровневые функции тоже доступны: `open_db`, `knn_by_vec`,
-`text_search`, `fuzzy_search`, `image_to_data_url`.
-
-Индексация новых строк:
-
-```python
-from emb_api import index_texts
-
-index_texts(
-    ["mod:id", "other_mod:some_item"],
-    db_path="embeddings.db",
-    client=client,
-)
+```bash
+uv run python embedder.py icon-exports-x32 \
+  -d embeddings.db \
+  -u http://localhost:9931/v1 \
+  -m embeddinggemma2
 ```
 
-Повторный запуск не создаёт дублей.
+Повторный запуск не создаёт дублей — уже проиндексированные предметы
+пропускаются.
+
+## Техническая документация
+
+- [TECHNICAL.md](TECHNICAL.md) — CLI, Python API, схемы для LLM, индексация,
+  добавление новых типов рецептов и устройство проекта.
+- [RecipeStudio/README.md](RecipeStudio/README.md) — горячие клавиши и приёмы
+  работы в редакторе.
+- [WINDOWS.md](WINDOWS.md) — сборка и запуск на Windows.
