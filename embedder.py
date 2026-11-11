@@ -1,112 +1,119 @@
 #!/usr/bin/env python3
 """
-Embed a list of "mod:id" strings through a local OpenAI-compatible
-endpoint and store them in sqlite-vec.
+Index item icons from an icon export folder into sqlite-vec.
 
-Columns:
-  full       TEXT  PRIMARY KEY  — the whole string ("mod:id")
-  mod        TEXT               — the part before ':' (aux)
-  id         TEXT               — the part after ':' (aux)
-  embedding  FLOAT[N]           — vector from embeddinggemma2
+Source filenames (x32 icons):
+    modid__item_id.png
+    fluid__modid__fluid_id.png   -> skipped
 
-Repeated runs do not create duplicates: already embedded strings are skipped.
+An NBT/component suffix is cut off:
+    addictives__big_vape__{'addictives__fluid_type'__'nicotine'}.png
+    -> mod=addictives, id=big_vape
+Collisions after the cut are collapsed (deduplicated by full "mod:id").
+
+The embedded text is the item id *without* the mod prefix.
+
+Columns (same schema as the previous indexer):
+  full       TEXT  PRIMARY KEY  — "mod:id"
+  mod        TEXT               — the part before the first "__"
+  id         TEXT               — the item id (NBT suffix stripped)
+  embedding  FLOAT[N]           — vector from the embedding server
+
+Repeated runs do not create duplicates: already indexed "mod:id" rows
+are skipped.
 """
 
 import argparse
-import json
 import sqlite3
 import sys
 import time
 from pathlib import Path
 
 import sqlite_vec
-from openai import OpenAI
+
+from emb_api import EmbeddingClient, ensure_table, open_db
+
+DEFAULT_ICONS_DIR = "icon-exports-x32"
+DEFAULT_DB = "embeddings.db"
+DEFAULT_BASE_URL = "http://localhost:9931/v1"
+DEFAULT_MODEL = "embeddinggemma2"
+
+FLUID_PREFIX = "fluid__"
+NBT_MARKER = "__{"
 
 
-# ----------------------------- утилиты -------------------------------------
+# ----------------------------- файлы --------------------------------------
 
 
-def load_items(path: str) -> list[str]:
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(data, list):
-        raise ValueError("ожидался JSON-массив строк")
-    return data
+def parse_icon_name(path: Path) -> tuple[str, str] | None:
+    """'modid__item_id.png' -> ('modid', 'item_id'); None if not an item icon."""
+    if path.suffix.lower() != ".png":
+        return None
+
+    stem = path.stem
+    if stem.startswith(FLUID_PREFIX):
+        return None
+    if "__" not in stem:
+        return None
+
+    mod, rest = stem.split("__", 1)
+    # NBT/component suffix: cut at the first "__{" occurrence
+    item = rest.split(NBT_MARKER, 1)[0]
+    if not mod or not item:
+        return None
+    return mod, item
 
 
-def dedupe(seq: list[str]) -> list[str]:
-    seen, out = set(), []
-    for x in seq:
-        if x not in seen:
-            seen.add(x)
-            out.append(x)
+def collect_icons(icons_dir: Path) -> tuple[list[tuple[str, str, str]], int]:
+    """Return ([(full, mod, item), ...], skipped_fluids) deduplicated by full."""
+    if not icons_dir.is_dir():
+        raise SystemExit(f"каталог не найден: {icons_dir}")
+
+    unique: dict[str, tuple[str, str, str]] = {}
+    fluids = 0
+    ignored = 0
+
+    for path in sorted(icons_dir.glob("*.png")):
+        if path.stem.startswith(FLUID_PREFIX):
+            fluids += 1
+            continue
+        parsed = parse_icon_name(path)
+        if parsed is None:
+            ignored += 1
+            continue
+
+        mod, item = parsed
+        full = f"{mod}:{item}"
+        # защита от коллизий после обрезки NBT: первая запись выигрывает
+        unique.setdefault(full, (full, mod, item))
+
+    if ignored:
+        print(f"пропущено нераспознанных имён: {ignored}", file=sys.stderr)
+    return list(unique.values()), fluids
+
+
+# ----------------------------- клиент -------------------------------------
+
+
+def embed_safe(client: EmbeddingClient, texts: list[str]) -> list[list[float]]:
+    """Try a batch first; on failure, fall back to one-at-a-time with retries."""
+    try:
+        return client.embed_texts(texts)
+    except Exception as e:
+        print(f"  [warn] батч упал ({e}); переключаюсь на поштучно", file=sys.stderr)
+
+    out: list[list[float]] = []
+    for text in texts:
+        for attempt in range(3):
+            try:
+                out.append(client.embed_text(text))
+                break
+            except Exception as e:
+                print(f"  [retry {attempt + 1}/3] {e}", file=sys.stderr)
+                time.sleep(1.5 * (attempt + 1))
+        else:
+            raise RuntimeError(f"не удалось заэмбедить: {text[:80]!r}")
     return out
-
-
-def split_full(full: str) -> tuple[str, str]:
-    """'mod:id' -> ('mod', 'id'); if ':' is missing, mod='', id=full."""
-    if ":" in full:
-        mod, ident = full.split(":", 1)
-        return mod, ident
-    return "", full
-
-
-# ----------------------------- клиент --------------------------------------
-
-
-class Embedder:
-    def __init__(self, base_url: str, model: str, api_key: str = "dummy"):
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
-        self.model = model
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        resp = self.client.embeddings.create(model=self.model, input=texts)
-        data = sorted(resp.data, key=lambda x: x.index)  # порядок = порядок input
-        return [d.embedding for d in data]
-
-    def embed_safe(self, texts: list[str]) -> list[list[float]]:
-        """Try a batch first; on failure, fall back to one-at-a-time with retries."""
-        try:
-            return self.embed(texts)
-        except Exception as e:
-            print(
-                f"  [warn] батч упал ({e}); переключаюсь на поштучно", file=sys.stderr
-            )
-
-        out: list[list[float]] = []
-        for t in texts:
-            for attempt in range(3):
-                try:
-                    out.append(self.embed([t])[0])
-                    break
-                except Exception as e:
-                    print(f"  [retry {attempt + 1}/3] {e}", file=sys.stderr)
-                    time.sleep(1.5 * (attempt + 1))
-            else:
-                raise RuntimeError(f"не удалось заэмбедить: {t[:80]!r}")
-        return out
-
-
-# ----------------------------- sqlite-vec ----------------------------------
-
-
-def ensure_table(db: sqlite3.Connection, dim: int) -> None:
-    db.execute(f"""
-        CREATE VIRTUAL TABLE IF NOT EXISTS items USING vec0(
-            full      TEXT PRIMARY KEY,
-            embedding float[{dim}],
-            +mod      TEXT,
-            +id       TEXT
-        )
-    """)
-    db.commit()
-
-
-def open_db(path: str) -> sqlite3.Connection:
-    db = sqlite3.connect(path)
-    db.enable_load_extension(True)
-    sqlite_vec.load(db)
-    db.enable_load_extension(False)
-    return db
 
 
 # ----------------------------- main ----------------------------------------
@@ -114,10 +121,15 @@ def open_db(path: str) -> sqlite3.Connection:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("input", help="JSON-файл со списком строк 'mod:id'")
-    ap.add_argument("-d", "--db", default="embeddings.db")
-    ap.add_argument("-u", "--base-url", default="http://localhost:9931/v1")
-    ap.add_argument("-m", "--model", default="embeddinggemma2")
+    ap.add_argument(
+        "icons",
+        nargs="?",
+        default=DEFAULT_ICONS_DIR,
+        help=f"каталог с иконками (по умолчанию {DEFAULT_ICONS_DIR})",
+    )
+    ap.add_argument("-d", "--db", default=DEFAULT_DB)
+    ap.add_argument("-u", "--base-url", default=DEFAULT_BASE_URL)
+    ap.add_argument("-m", "--model", default=DEFAULT_MODEL)
     ap.add_argument("-b", "--batch-size", type=int, default=32)
     ap.add_argument(
         "--limit",
@@ -127,70 +139,81 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    items = dedupe(load_items(args.input))
-    print(f"загружено уникальных строк: {len(items)}")
-    if not items:
+    entries, fluids = collect_icons(Path(args.icons))
+    print(f"иконок-предметов: {len(entries)} (fluid пропущено: {fluids})")
+    if not entries:
         print("нечего делать")
         return
 
-    parsed = [(*split_full(it), it) for it in items]  # (mod, id, full)
-
     db = open_db(args.db)
-    embedder = Embedder(args.base_url, args.model)
+    client = EmbeddingClient(args.base_url, args.model)
 
-    # 1) определяем размерность эмбеддинга одним пробным запросом
-    print("пробный запрос для определения размерности...")
-    sample_emb = embedder.embed_safe([parsed[0][2]])[0]
-    dim = len(sample_emb)
-    print(f"dim = {dim}")
-
-    ensure_table(db, dim)
-
-    existing = {row[0] for row in db.execute("SELECT full FROM items").fetchall()}
+    table_exists = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='items'"
+    ).fetchone()
+    existing: set[str] = set()
+    if table_exists:
+        existing = {row[0] for row in db.execute("SELECT full FROM items").fetchall()}
     print(f"уже в базе: {len(existing)}")
 
-    pending = [p for p in parsed if p[2] not in existing]
+    pending = [e for e in entries if e[0] not in existing]
     print(f"к обработке: {len(pending)}")
     if args.limit is not None:
         pending = pending[: args.limit]
         print(f"  (--limit: {len(pending)})")
+    if not pending:
+        print(f"готово. всего строк в базе: {len(existing)}")
+        return
 
-    # 2) пробную строку вставляем сразу — эмбеддинг уже есть
-    if pending and pending[0][2] not in existing:
-        mod, ident, full = pending[0]
+    # 1) пробный эмбеддинг: определяем размерность и сразу используем его
+    print("пробный запрос для определения размерности...")
+    first_emb = embed_safe(client, [pending[0][2]])[0]
+    dim = len(first_emb)
+    print(f"dim = {dim}")
+
+    ensure_table(db, dim)
+
+    # если таблица уже была — размерность должна совпадать
+    if table_exists and existing:
+        row = db.execute("SELECT length(embedding) FROM items LIMIT 1").fetchone()
+        if row and row[0] // 4 != dim:
+            raise SystemExit(
+                f"размерность не совпадает: сервер → {dim}, база → {row[0] // 4}"
+            )
+
+    def insert(full: str, mod: str, item: str, emb: list[float]) -> bool:
         try:
             db.execute(
                 "INSERT INTO items(full, embedding, mod, id) VALUES (?, ?, ?, ?)",
-                (full, sqlite_vec.serialize_float32(sample_emb), mod, ident),
+                (full, sqlite_vec.serialize_float32(emb), mod, item),
             )
-            db.commit()
-            existing.add(full)
-            pending = pending[1:]
         except sqlite3.IntegrityError:
-            pass
+            return False
+        existing.add(full)
+        return True
+
+    inserted = 0
+    # 2) первый эмбеддинг уже есть — не тратим запрос повторно
+    full, mod, item = pending[0]
+    if insert(full, mod, item, first_emb):
+        inserted += 1
+    db.commit()
+    pending = pending[1:]
 
     # 3) основной батч-цикл
     total = len(pending)
     for i in range(0, total, args.batch_size):
         batch = pending[i : i + args.batch_size]
-        embs = embedder.embed_safe([b[2] for b in batch])
+        embs = embed_safe(client, [b[2] for b in batch])
 
-        for (mod, ident, full), emb in zip(batch, embs):
-            if full in existing:
-                continue
-            try:
-                db.execute(
-                    "INSERT INTO items(full, embedding, mod, id) VALUES (?, ?, ?, ?)",
-                    (full, sqlite_vec.serialize_float32(emb), mod, ident),
-                )
-                existing.add(full)
-            except sqlite3.IntegrityError:
-                pass  # дубль — молча пропускаем
+        for (full, mod, item), emb in zip(batch, embs):
+            if insert(full, mod, item, emb):
+                inserted += 1
         db.commit()
         print(f"  {min(i + args.batch_size, total)}/{total}")
 
     count = db.execute("SELECT count(*) FROM items").fetchone()[0]
-    print(f"готово. всего строк в базе: {count}")
+    print(f"готово. добавлено: {inserted}, всего строк в базе: {count}")
 
 
 if __name__ == "__main__":
