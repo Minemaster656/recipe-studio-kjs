@@ -10,6 +10,7 @@ import customtkinter as ctk
 from RecipeStudio.components.drag_manager import DragManager
 from RecipeStudio.components.export_panel import ExportPanel
 from RecipeStudio.components.item_grid import ItemGrid
+from RecipeStudio.components.recipe_graph import RecipeGraphView
 from RecipeStudio.components.recipe_panel import RecipePanel
 from RecipeStudio.components.search_bar import SearchBar
 from RecipeStudio.components.slot import Slot, SlotSettingsDialog
@@ -46,6 +47,7 @@ class RecipeStudioApp(ctk.CTk):
         self.recipe_index = RecipeIndex()
         self.tooltip = Tooltip(self)
         self.drag_manager = DragManager(self)
+        self._context_menu: tk.Menu | None = None
 
         self.palette_selection: CatalogEntry | None = None
         self.slot_pick: Ingredient | None = None
@@ -69,7 +71,7 @@ class RecipeStudioApp(ctk.CTk):
         self.favorites_only = False
         self._tab_images: list[ctk.CTkImage] = []
 
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
         self._build_ui()
         self._bind_hotkeys()
@@ -94,8 +96,47 @@ class RecipeStudioApp(ctk.CTk):
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_ui(self) -> None:
+        # ---- global tabs: editor / recipe graph -------------------------
+        global_bar = ctk.CTkFrame(self, fg_color="transparent")
+        global_bar.grid(row=0, column=0, sticky="ew", padx=14, pady=(8, 0))
+        global_bar.grid_columnconfigure(0, weight=1)
+        self.global_tab_buttons: dict[str, ctk.CTkButton] = {}
+        self.global_tab = "editor"
+        for column, (key, label) in enumerate(
+            (("editor", "Recipe Editor"), ("graph", "Recipe Graph"))
+        ):
+            button = ctk.CTkButton(
+                global_bar,
+                text=label,
+                height=30,
+                width=170,
+                corner_radius=8,
+                fg_color=COLORS["panel_alt"],
+                hover_color=COLORS["panel_hover"],
+                text_color=COLORS["text_dim"],
+                font=FONT_UI_SMALL,
+                command=lambda k=key: self.show_global_tab(k),
+            )
+            button.grid(
+                row=0,
+                column=column,
+                sticky="w",
+                padx=(0, 4) if column == 0 else (4, 0),
+            )
+            self.global_tab_buttons[key] = button
+
+        self.editor_page = ctk.CTkFrame(self, fg_color="transparent")
+        self.editor_page.grid(row=1, column=0, sticky="nsew")
+        self.editor_page.grid_rowconfigure(0, weight=1)
+        self.editor_page.grid_columnconfigure(0, weight=1)
+
+        self.graph_page = ctk.CTkFrame(self, fg_color="transparent")
+        self.graph_page.grid(row=1, column=0, sticky="nsew")
+        self.graph_page.grid_rowconfigure(0, weight=1)
+        self.graph_page.grid_columnconfigure(0, weight=1)
+
         self.paned = tk.PanedWindow(
-            self,
+            self.editor_page,
             orient="horizontal",
             sashwidth=6,
             bd=0,
@@ -239,6 +280,11 @@ class RecipeStudioApp(ctk.CTk):
         self.export_panel = ExportPanel(right, self)
         self.export_panel.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
 
+        self.graph_view = RecipeGraphView(self.graph_page, self)
+        self.graph_view.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
+        self.graph_page.grid_remove()
+        self._update_global_tabs()
+
         self.status_label = ctk.CTkLabel(
             self,
             text="",
@@ -246,7 +292,33 @@ class RecipeStudioApp(ctk.CTk):
             text_color=COLORS["text_dim"],
             font=FONT_UI_SMALL,
         )
-        self.status_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(2, 6))
+        self.status_label.grid(row=2, column=0, sticky="ew", padx=14, pady=(2, 6))
+
+    # ------------------------------------------------------------------
+    def _update_global_tabs(self) -> None:
+        for key, button in self.global_tab_buttons.items():
+            active = key == self.global_tab
+            button.configure(
+                fg_color=COLORS["accent"] if active else COLORS["panel_alt"],
+                text_color=COLORS["panel"] if active else COLORS["text_dim"],
+            )
+
+    def show_global_tab(self, name: str) -> None:
+        if name not in ("editor", "graph"):
+            return
+        self.global_tab = name
+        if name == "editor":
+            self.graph_page.grid_remove()
+            self.editor_page.grid()
+            self.set_status("Recipe editor")
+        else:
+            self.editor_page.grid_remove()
+            self.graph_page.grid()
+            self.graph_view.refresh(recenter=True)
+            self.set_status(
+                f"Recipe graph · {len(self.recipe_index.records)} indexed recipes"
+            )
+        self._update_global_tabs()
 
     # ------------------------------------------------------------------
     def _update_left_tabs(self) -> None:
@@ -273,6 +345,107 @@ class RecipeStudioApp(ctk.CTk):
                 f"Recipe browser · {len(self.recipe_index.records)} recipes"
             )
         self._update_left_tabs()
+
+    # ------------------------------------------------------------------
+    def view_item_in_graph(self, item, kind: str | None = None) -> None:
+        if isinstance(item, Ingredient):
+            item_id = item.id
+            kind = item.kind
+        elif isinstance(item, CatalogEntry):
+            item_id = item.id
+            kind = item.kind
+        else:
+            item_id = str(item or "")
+        if not item_id:
+            return
+        kind = kind or "item"
+        if kind not in ("item", "fluid", "tag"):
+            kind = "item"
+        self.show_global_tab("graph")
+        self.graph_view.set_target(kind, item_id)
+        self.set_status(f"Recipe graph · {item_id}")
+
+    def show_item_context_menu(
+        self, entry: CatalogEntry, x_root: int, y_root: int
+    ) -> None:
+        self._show_context_menu(
+            (
+                (
+                    "View in recipe graph",
+                    lambda: self.view_item_in_graph(entry),
+                    True,
+                ),
+                (
+                    "Copy item ID",
+                    lambda: self._copy_text(entry.id, "Copied item ID"),
+                    True,
+                ),
+            ),
+            x_root,
+            y_root,
+        )
+
+    def open_slot_context_menu(self, slot: Slot, x_root: int, y_root: int) -> None:
+        ingredient = slot.ingredient
+        can_graph = (
+            not ingredient.is_empty
+            and ingredient.kind in ("item", "fluid", "tag")
+            and bool(ingredient.id)
+        )
+        self._show_context_menu(
+            (
+                (
+                    "View in recipe graph",
+                    lambda: self.view_item_in_graph(ingredient),
+                    can_graph,
+                ),
+                ("Slot settings…", lambda: self.open_slot_settings(slot), True),
+                (
+                    "Clear slot",
+                    lambda: slot.clear(),
+                    not ingredient.is_empty,
+                ),
+            ),
+            x_root,
+            y_root,
+        )
+
+    def _copy_text(self, text: str, status: str) -> None:
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.update_idletasks()
+        self.set_status(status)
+
+    def _show_context_menu(self, entries, x_root: int, y_root: int) -> None:
+        if self._context_menu is not None:
+            try:
+                self._context_menu.destroy()
+            except tk.TclError:
+                pass
+        menu = tk.Menu(
+            self,
+            tearoff=0,
+            bg=COLORS["panel_alt"],
+            fg=COLORS["text"],
+            activebackground=COLORS["accent"],
+            activeforeground=COLORS["panel"],
+            font=FONT_UI_SMALL,
+            bd=1,
+        )
+        for label, command, enabled in entries:
+            menu.add_command(
+                label=label,
+                command=command,
+                state="normal" if enabled else "disabled",
+            )
+        self._context_menu = menu
+        try:
+            menu.tk_popup(x_root, y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
 
     # ------------------------------------------------------------------
     def _load_tab_icon(self, module):
@@ -567,7 +740,7 @@ class RecipeStudioApp(ctk.CTk):
 
         ImportRecipeDialog(self)
 
-    def apply_imported_recipe(self, recipe) -> None:
+    def apply_imported_recipe(self, recipe) -> bool:
         module = next(
             (item for item in self.modules if item.id == recipe.module_id), None
         )
@@ -575,7 +748,7 @@ class RecipeStudioApp(ctk.CTk):
             self.set_status(
                 f"Import failed: модуль {recipe.module_id!r} не найден", error=True
             )
-            return
+            return False
         try:
             self.show_module(module)
             editor = self.current_editor
@@ -586,12 +759,13 @@ class RecipeStudioApp(ctk.CTk):
             self.update_export()
         except Exception as exc:
             self.set_status(f"Import failed: {type(exc).__name__}: {exc}", error=True)
-            return
+            return False
 
         message = f"Imported {recipe.format}: {module.title}"
         if recipe.warnings:
             message += " · " + " · ".join(recipe.warnings)
         self.set_status(message)
+        return True
 
     def on_editor_changed(self, _editor=None) -> None:
         self.update_export()
@@ -608,13 +782,19 @@ class RecipeStudioApp(ctk.CTk):
     def start_recipe_index(self, paths) -> None:
         self.recipe_panel.start_indexing(paths)
 
-    def import_indexed_recipe(self, record) -> None:
+    def import_indexed_recipe(self, record, *, switch: bool = False) -> bool:
+        if record.import_error:
+            self.set_status(f"Import failed: {record.import_error}", error=True)
+            return False
         try:
             recipe = load_imported_recipe(record)
         except Exception as exc:
             self.set_status(f"Import failed: {type(exc).__name__}: {exc}", error=True)
-            return
-        self.apply_imported_recipe(recipe)
+            return False
+        ok = self.apply_imported_recipe(recipe)
+        if ok and switch:
+            self.show_global_tab("editor")
+        return ok
 
     def copy_recipe_removal(self, record) -> None:
         snippet = removal_snippet(

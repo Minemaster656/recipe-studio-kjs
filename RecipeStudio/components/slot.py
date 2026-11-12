@@ -275,8 +275,10 @@ class Slot(tk.Frame):
         self.app.pick_slot_ingredient(self)
         return "break"
 
-    def _right_click(self, _event=None) -> str:
-        self.app.open_slot_settings(self)
+    def _right_click(self, event=None) -> str:
+        x_root = event.x_root if event is not None else self.winfo_rootx()
+        y_root = event.y_root if event is not None else self.winfo_rooty()
+        self.app.open_slot_context_menu(self, x_root, y_root)
         return "break"
 
     def _enter(self, event=None) -> None:

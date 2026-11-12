@@ -52,6 +52,7 @@ class ItemGrid(tk.Frame):
         self.canvas.bind("<Motion>", self._on_motion)
         self.canvas.bind("<Leave>", self._on_leave)
         self.canvas.bind("<Button-1>", self._on_press)
+        self.canvas.bind("<Button-3>", self._on_right_click)
         self.canvas.bind("<B1-Motion>", self._on_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
         self.canvas.bind("<MouseWheel>", self._on_wheel)
@@ -211,6 +212,14 @@ class ItemGrid(tk.Frame):
             self._dragging = True
             self.app.tooltip.hide()
             self.app.drag_manager.start(self.entries[idx], event.x_root, event.y_root)
+
+    def _on_right_click(self, event) -> str:
+        idx = self._index_at(event.x, event.y)
+        if idx < 0:
+            return "break"
+        self.app.tooltip.hide()
+        self.app.show_item_context_menu(self.entries[idx], event.x_root, event.y_root)
+        return "break"
 
     def _on_release(self, event) -> None:
         was_dragging = self._dragging
