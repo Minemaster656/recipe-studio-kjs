@@ -56,6 +56,14 @@ class HeatSelector(ctk.CTkFrame):
     def requirement(self) -> str | None:
         return self.LEVELS[self.level][2]
 
+    def set_requirement(self, requirement: str | None, *, notify: bool = True) -> None:
+        target = 0
+        for index, (_label, _item_id, value) in enumerate(self.LEVELS):
+            if value == requirement:
+                target = index
+                break
+        self.set_level(target, notify=notify)
+
     def clear(self) -> None:
         self.set_level(0, notify=False)
 

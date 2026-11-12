@@ -56,9 +56,19 @@ class SearchGateway:
         try:
             if str(SCRIPTS_DIR) not in sys.path:
                 sys.path.insert(0, str(SCRIPTS_DIR))
-            from emb_api import EmbeddingClient, SearchIndex  # type: ignore
+            from emb_api import (  # type: ignore
+                EmbeddingClient,
+                EmbeddingError,
+                ImageNotSupported,
+                SearchIndex,
+            )
 
-            self._api = (EmbeddingClient, SearchIndex)
+            self._api = (
+                EmbeddingClient,
+                SearchIndex,
+                EmbeddingError,
+                ImageNotSupported,
+            )
         except Exception as exc:  # pragma: no cover - optional integration
             self._api_error = exc
             return None
@@ -68,7 +78,7 @@ class SearchGateway:
         api = self._load_api()
         if api is None:
             raise SearchUnavailable(f"emb_api is unavailable: {self._api_error}")
-        EmbeddingClient, SearchIndex = api
+        EmbeddingClient, SearchIndex, _EmbeddingError, _ImageNotSupported = api
         db = self.config.path_for("database")
         if not db.exists():
             raise SearchUnavailable(f"Embedding database not found: {db}")
@@ -117,6 +127,10 @@ class SearchGateway:
 
     def _embedding_search(self, query: str, limit: int) -> list[SearchHit]:
         image_path = self._image_path(query)
+        if image_path is None:
+            candidate = self._image_candidate(query)
+            if candidate is not None:
+                raise SearchUnavailable(f"Image file not found: {candidate}")
         idx = None
         try:
             idx = self._open_index(embeddings=True)
@@ -127,6 +141,24 @@ class SearchGateway:
         except SearchUnavailable:
             raise
         except Exception as exc:
+            api = self._load_api()
+            if api is not None:
+                _client, _index, embedding_error, image_error = api
+                if image_path is not None and isinstance(exc, image_error):
+                    raise SearchUnavailable(
+                        "The embedding model does not support images. "
+                        f"Use a text query or an image-capable model. Details: {exc}"
+                    ) from exc
+                if isinstance(exc, embedding_error):
+                    raise SearchUnavailable(
+                        f"The embedding model is unavailable: {exc}"
+                    ) from exc
+            if image_path is not None:
+                raise SearchUnavailable(
+                    "Image embedding search failed: the embedding model is "
+                    "unavailable or does not support images. "
+                    f"Details: {exc}"
+                ) from exc
             raise SearchUnavailable(f"Embedding search failed: {exc}") from exc
         finally:
             if idx is not None:
@@ -256,14 +288,24 @@ class SearchGateway:
         return out
 
     @staticmethod
-    def _image_path(query: str) -> Path | None:
+    def _image_candidate(query: str) -> Path | None:
         raw = query.strip().strip("'\"")
         if not raw:
             return None
-        suffix = Path(raw).suffix.lower()
-        if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}:
+        if Path(raw).suffix.lower() not in {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".webp",
+            ".bmp",
+            ".gif",
+        }:
             return None
-        path = Path(os.path.expanduser(raw))
-        if path.is_file():
+        return Path(os.path.expanduser(raw))
+
+    @classmethod
+    def _image_path(cls, query: str) -> Path | None:
+        path = cls._image_candidate(query)
+        if path is not None and path.is_file():
             return path
         return None

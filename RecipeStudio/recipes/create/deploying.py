@@ -5,7 +5,13 @@ import customtkinter as ctk
 
 from RecipeStudio.components.create_widgets import IngredientGroup
 from RecipeStudio.components.slot import Slot
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredient_from_state,
+    ingredients_from_state,
+)
 from RecipeStudio.recipes.create.common import CreateEditorBase, custom_body
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
@@ -119,6 +125,23 @@ class DeployingEditor(CreateEditorBase):
     def main_output(self):
         out = self.outputs.ingredients()
         return out[0] if out else None
+
+    def get_state(self) -> dict:
+        return {
+            "depot": self.depot.ingredient.to_dict(),
+            "held": self.held.ingredient.to_dict(),
+            "outputs": [i.to_dict() for i in self.outputs.ingredients()],
+            "keep_held": bool(self.keep_held.get()),
+        }
+
+    def set_state(self, state: dict) -> None:
+        self.depot.set_ingredient(
+            ingredient_from_state(state.get("depot")), notify=False
+        )
+        self.held.set_ingredient(ingredient_from_state(state.get("held")), notify=False)
+        self.outputs.set_ingredients(ingredients_from_state(state.get("outputs")))
+        self.keep_held.set(bool(state.get("keep_held", False)))
+        self.changed()
 
 
 class DeployingModule(RecipeModule):

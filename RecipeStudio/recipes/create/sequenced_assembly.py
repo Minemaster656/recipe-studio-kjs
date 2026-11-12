@@ -9,7 +9,13 @@ from RecipeStudio.components.create_widgets import FluidAmountField, IngredientG
 from RecipeStudio.components.number_field import NumberField
 from RecipeStudio.components.slot import Slot
 from RecipeStudio.model.ingredient import Ingredient
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredient_from_state,
+    ingredients_from_state,
+)
 from RecipeStudio.recipes.create.common import (
     CreateEditorBase,
     ingredient_json,
@@ -338,6 +344,71 @@ class SequencedAssemblyEditor(CreateEditorBase):
     def main_output(self):
         out = self.results.ingredients()
         return out[0] if out else None
+
+    def get_state(self) -> dict:
+        steps = []
+        for step in self.steps:
+            kind = step.type_var.get()
+            steps.append(
+                {
+                    "type": kind,
+                    "item": step.item_extra.ingredient.to_dict()
+                    if kind == "Deploying"
+                    else None,
+                    "fluid": step.fluid_extra.ingredient.to_dict()
+                    if kind == "Filling"
+                    else None,
+                }
+            )
+        return {
+            "start": self.start.ingredient.to_dict(),
+            "transitional": self.transitional.ingredient.to_dict(),
+            "steps": steps,
+            "results": [i.to_dict() for i in self.results.ingredients()],
+            "scrap": [i.to_dict() for i in self.scrap.ingredients()],
+            "loops": int(self.loops.get_value() or 1),
+        }
+
+    def set_state(self, state: dict) -> None:
+        self.start.set_ingredient(
+            ingredient_from_state(state.get("start")), notify=False
+        )
+        self.transitional.set_ingredient(
+            ingredient_from_state(state.get("transitional")), notify=False
+        )
+        for step in list(self.steps):
+            step.destroy()
+        self.steps.clear()
+
+        raw_steps = state.get("steps") or []
+        if not raw_steps:
+            self.add_step(notify=False)
+        for raw in raw_steps:
+            self.add_step(notify=False)
+            step = self.steps[-1]
+            kind = str(raw.get("type", "Pressing"))
+            if kind not in STEP_TYPES:
+                kind = "Pressing"
+            step.type_var.set(kind)
+            if kind == "Deploying":
+                step.item_extra.set_ingredient(
+                    ingredient_from_state(raw.get("item")), notify=False
+                )
+            elif kind == "Filling":
+                fluid = ingredient_from_state(raw.get("fluid"))
+                amount = raw.get("amount")
+                if amount is None and fluid.amount is not None:
+                    amount = fluid.amount
+                step.amount.set_value(int(amount) if amount is not None else 1000)
+                if not fluid.is_empty:
+                    fluid.amount = int(amount) if amount is not None else 1000
+                step.fluid_extra.set_ingredient(fluid, notify=False)
+            step._refresh()
+
+        self.results.set_ingredients(ingredients_from_state(state.get("results")))
+        self.scrap.set_ingredients(ingredients_from_state(state.get("scrap")))
+        self.loops.set_value(int(state.get("loops") or 1))
+        self.changed()
 
 
 class SequencedAssemblyModule(RecipeModule):

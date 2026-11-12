@@ -3,7 +3,12 @@ from pathlib import Path
 import customtkinter as ctk
 
 from RecipeStudio.components.slot import Slot
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredient_from_state,
+)
 from RecipeStudio.recipes.create.common import CreateEditorBase
 from RecipeStudio.services.codegen import item_literal
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
@@ -199,6 +204,37 @@ class MechanicalCraftingEditor(CreateEditorBase):
             if not self.output.ingredient.is_empty
             else None
         )
+
+    def get_state(self) -> dict:
+        return {
+            "rows": self.rows,
+            "cols": self.cols,
+            "grid": [
+                [self.slots[r][c].ingredient.to_dict() for c in range(self.cols)]
+                for r in range(self.rows)
+            ],
+            "output": self.output.ingredient.to_dict(),
+        }
+
+    def set_state(self, state: dict) -> None:
+        for row in self.slots:
+            for slot in row:
+                slot.clear(notify=False)
+        grid = state.get("grid") or []
+        rows = state.get("rows") or len(grid) or 1
+        cols = state.get("cols") or max((len(row) for row in grid), default=1)
+        self.rows = max(1, min(self.MAX, int(rows)))
+        self.cols = max(1, min(self.MAX, int(cols)))
+        for r, row in enumerate(grid[: self.rows]):
+            for c, value in enumerate(row[: self.cols]):
+                if value:
+                    self.slots[r][c].set_ingredient(
+                        ingredient_from_state(value), notify=False
+                    )
+        self.output.set_ingredient(
+            ingredient_from_state(state.get("output")), notify=False
+        )
+        self._apply_size()
 
 
 class MechanicalCraftingModule(RecipeModule):

@@ -490,6 +490,40 @@ class RecipeStudioApp(ctk.CTk):
         self.update_export()
         self.set_status("Editor cleared")
 
+    # ------------------------------------------------------------------
+    # Recipe import
+    # ------------------------------------------------------------------
+    def open_import_dialog(self) -> None:
+        from RecipeStudio.components.import_dialog import ImportRecipeDialog
+
+        ImportRecipeDialog(self)
+
+    def apply_imported_recipe(self, recipe) -> None:
+        module = next(
+            (item for item in self.modules if item.id == recipe.module_id), None
+        )
+        if module is None:
+            self.set_status(
+                f"Import failed: модуль {recipe.module_id!r} не найден", error=True
+            )
+            return
+        try:
+            self.show_module(module)
+            editor = self.current_editor
+            if editor is None:
+                raise RuntimeError("редактор не открылся")
+            editor.set_state(recipe.state)
+            self.export_panel.clear_override()
+            self.update_export()
+        except Exception as exc:
+            self.set_status(f"Import failed: {type(exc).__name__}: {exc}", error=True)
+            return
+
+        message = f"Imported {recipe.format}: {module.title}"
+        if recipe.warnings:
+            message += " · " + " · ".join(recipe.warnings)
+        self.set_status(message)
+
     def on_editor_changed(self, _editor=None) -> None:
         self.update_export()
 

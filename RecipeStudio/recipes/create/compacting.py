@@ -3,9 +3,13 @@ from pathlib import Path
 import customtkinter as ctk
 
 from RecipeStudio.components.create_widgets import HeatSelector, IngredientGroup
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredients_from_state,
+)
 from RecipeStudio.recipes.create.common import CreateEditorBase, custom_body
-from RecipeStudio.recipes.base import RecipeModule
 from RecipeStudio.theme import COLORS
 
 
@@ -128,6 +132,25 @@ class CompactingEditor(CreateEditorBase):
     def main_output(self):
         out = self.outputs.ingredients()
         return out[0] if out else None
+
+    def get_state(self) -> dict:
+        return {
+            "item_inputs": [i.to_dict() for i in self.item_inputs.ingredients()],
+            "fluid_inputs": [i.to_dict() for i in self.fluid_inputs.ingredients()],
+            "outputs": [i.to_dict() for i in self.outputs.ingredients()],
+            "heat_requirement": self.heat.requirement(),
+        }
+
+    def set_state(self, state: dict) -> None:
+        self.item_inputs.set_ingredients(
+            ingredients_from_state(state.get("item_inputs"))
+        )
+        self.fluid_inputs.set_ingredients(
+            ingredients_from_state(state.get("fluid_inputs"))
+        )
+        self.outputs.set_ingredients(ingredients_from_state(state.get("outputs")))
+        self.heat.set_requirement(state.get("heat_requirement"), notify=False)
+        self.changed()
 
 
 class CompactingModule(RecipeModule):

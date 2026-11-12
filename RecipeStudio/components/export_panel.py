@@ -40,6 +40,16 @@ class ExportPanel(ctk.CTkFrame):
         ).grid(row=0, column=1, sticky="e", padx=(0, 6))
         ctk.CTkButton(
             header,
+            text="Import",
+            width=78,
+            height=26,
+            fg_color=COLORS["panel_alt"],
+            hover_color=COLORS["panel_hover"],
+            text_color=COLORS["text"],
+            command=self.app.open_import_dialog,
+        ).grid(row=0, column=2, sticky="e", padx=(0, 6))
+        ctk.CTkButton(
+            header,
             text="Clear editor",
             width=100,
             height=26,
@@ -47,7 +57,7 @@ class ExportPanel(ctk.CTkFrame):
             hover_color=COLORS["panel_hover"],
             text_color=COLORS["text"],
             command=self.app.clear_editor,
-        ).grid(row=0, column=2, sticky="e")
+        ).grid(row=0, column=3, sticky="e")
 
         self.code = ctk.CTkTextbox(
             self,

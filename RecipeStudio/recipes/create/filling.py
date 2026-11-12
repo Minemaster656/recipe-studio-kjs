@@ -3,7 +3,12 @@ from pathlib import Path
 import customtkinter as ctk
 
 from RecipeStudio.components.create_widgets import FluidAmountField
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredient_from_state,
+)
 from RecipeStudio.recipes.create.common import CreateEditorBase, custom_body
 from RecipeStudio.theme import COLORS
 
@@ -107,6 +112,31 @@ class FillingEditor(CreateEditorBase):
             if not self.output.ingredient.is_empty
             else None
         )
+
+    def get_state(self) -> dict:
+        return {
+            "item_input": self.item_in.ingredient.to_dict(),
+            "fluid_input": self.fluid_in.ingredient.to_dict(),
+            "amount": self.amount.value(),
+            "output": self.output.ingredient.to_dict(),
+        }
+
+    def set_state(self, state: dict) -> None:
+        self.item_in.set_ingredient(
+            ingredient_from_state(state.get("item_input")), notify=False
+        )
+        fluid = ingredient_from_state(state.get("fluid_input"))
+        amount = state.get("amount")
+        if amount is None and fluid.amount is not None:
+            amount = fluid.amount
+        self.amount.set_value(int(amount) if amount is not None else 1000)
+        if not fluid.is_empty:
+            fluid.amount = int(amount) if amount is not None else 1000
+        self.fluid_in.set_ingredient(fluid, notify=False)
+        self.output.set_ingredient(
+            ingredient_from_state(state.get("output")), notify=False
+        )
+        self.changed()
 
 
 class FillingModule(RecipeModule):

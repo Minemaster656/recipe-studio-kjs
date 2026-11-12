@@ -11,7 +11,13 @@ from RecipeStudio.components.create_widgets import IngredientGroup
 from RecipeStudio.components.slot import Slot
 from RecipeStudio.components.time_field import TimeField
 from RecipeStudio.model.ingredient import Ingredient, normalize_fluid_id
-from RecipeStudio.recipes.base import EditorContext, RecipeEditor, RecipeModule
+from RecipeStudio.recipes.base import (
+    EditorContext,
+    RecipeEditor,
+    RecipeModule,
+    ingredient_from_state,
+    ingredients_from_state,
+)
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
 
@@ -233,6 +239,28 @@ class SimpleProcessEditor(CreateEditorBase):
     def main_output(self) -> Ingredient | None:
         results = self._results()
         return results[0] if results else None
+
+    def get_state(self) -> dict:
+        return {
+            "inputs": [ingredient.to_dict() for ingredient in self._ingredients()],
+            "outputs": [ingredient.to_dict() for ingredient in self._results()],
+            "processing_time": self.time.get_ticks() if self.time is not None else None,
+        }
+
+    def set_state(self, state: dict) -> None:
+        inputs = ingredients_from_state(state.get("inputs"))
+        if self.input_group is not None:
+            self.input_group.set_ingredients(inputs[: self.module.max_inputs])
+        else:
+            for slot in self.inputs:
+                slot.clear(notify=False)
+            if inputs:
+                self.inputs[0].set_ingredient(inputs[0], notify=False)
+        self.output_group.set_ingredients(ingredients_from_state(state.get("outputs")))
+        if self.time is not None:
+            ticks = state.get("processing_time")
+            self.time.set_ticks(int(ticks) if ticks is not None else None)
+        self.changed()
 
 
 class SimpleProcessModule(RecipeModule):
