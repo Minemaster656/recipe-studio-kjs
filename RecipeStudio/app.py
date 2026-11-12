@@ -10,6 +10,7 @@ import customtkinter as ctk
 from RecipeStudio.components.drag_manager import DragManager
 from RecipeStudio.components.export_panel import ExportPanel
 from RecipeStudio.components.item_grid import ItemGrid
+from RecipeStudio.components.recipe_panel import RecipePanel
 from RecipeStudio.components.search_bar import SearchBar
 from RecipeStudio.components.slot import Slot, SlotSettingsDialog
 from RecipeStudio.components.tooltip import Tooltip
@@ -22,6 +23,8 @@ from RecipeStudio.services.codegen import build_export
 from RecipeStudio.services.favorites import Favorites
 from RecipeStudio.services.icons import IconCache
 from RecipeStudio.services.names import NameResolver
+from RecipeStudio.services.recipe_import import removal_snippet
+from RecipeStudio.services.recipe_index import RecipeIndex, load_imported_recipe
 from RecipeStudio.services.search import SearchGateway, SearchMode, SearchUnavailable
 from RecipeStudio.theme import COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD
 
@@ -40,6 +43,7 @@ class RecipeStudioApp(ctk.CTk):
         self.icons = IconCache(config.path_for("icons_dir"))
         self.favorites = Favorites(config.path_for("favorites"))
         self.search_gateway = SearchGateway(config, self.catalog)
+        self.recipe_index = RecipeIndex()
         self.tooltip = Tooltip(self)
         self.drag_manager = DragManager(self)
 
@@ -105,11 +109,45 @@ class RecipeStudioApp(ctk.CTk):
         self.paned.add(left, minsize=360, width=520)
         self.paned.add(right, minsize=620)
 
-        # ---- left: palette ------------------------------------------------
-        left.grid_rowconfigure(2, weight=1)
+        # ---- left: items / recipes --------------------------------------
+        left.grid_rowconfigure(1, weight=1)
         left.grid_columnconfigure(0, weight=1)
-        header = ctk.CTkFrame(left, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
+
+        tabs = ctk.CTkFrame(left, fg_color="transparent")
+        tabs.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 4))
+        tabs.grid_columnconfigure(0, weight=1)
+        tabs.grid_columnconfigure(1, weight=1)
+        self.left_tab_buttons: dict[str, ctk.CTkButton] = {}
+        for column, (key, label) in enumerate(
+            (("items", "Items"), ("recipes", "Recipes"))
+        ):
+            button = ctk.CTkButton(
+                tabs,
+                text=label,
+                height=28,
+                corner_radius=7,
+                fg_color=COLORS["panel_alt"],
+                hover_color=COLORS["panel_hover"],
+                text_color=COLORS["text_dim"],
+                font=FONT_UI_SMALL,
+                command=lambda k=key: self.show_left_tab(k),
+            )
+            button.grid(
+                row=0,
+                column=column,
+                sticky="ew",
+                padx=(0, 2) if column == 0 else (2, 0),
+            )
+            self.left_tab_buttons[key] = button
+        self.left_tab = "items"
+
+        self.items_view = ctk.CTkFrame(left, fg_color="transparent")
+        self.items_view.grid(row=1, column=0, sticky="nsew")
+        self.items_view.grid_rowconfigure(2, weight=1)
+        self.items_view.grid_columnconfigure(0, weight=1)
+
+        header = ctk.CTkFrame(self.items_view, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=(0, 4))
         header.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             header,
@@ -140,18 +178,23 @@ class RecipeStudioApp(ctk.CTk):
         self.fav_button.grid(row=0, column=2, sticky="e", padx=(8, 0))
         self._update_fav_button()
 
-        self.search_bar = SearchBar(left, self)
+        self.search_bar = SearchBar(self.items_view, self)
         self.search_bar.grid(row=1, column=0, sticky="ew", padx=12, pady=(2, 8))
 
-        self.item_grid = ItemGrid(left, self)
+        self.item_grid = ItemGrid(self.items_view, self)
         self.item_grid.grid(row=2, column=0, sticky="nsew", padx=(8, 4), pady=(0, 2))
 
         ctk.CTkLabel(
-            left,
+            self.items_view,
             text="Click select · drag to slot · middle-click slot picks · A favourite · Ctrl+A / ★ favourites · Esc exits",
             text_color=COLORS["text_dim"],
             font=("DejaVu Sans", 9),
         ).grid(row=3, column=0, pady=(2, 8))
+
+        self.recipe_panel = RecipePanel(left, self, self.recipe_index)
+        self.recipe_panel.grid(row=1, column=0, sticky="nsew", padx=(4, 8), pady=(0, 8))
+        self.recipe_panel.grid_remove()
+        self._update_left_tabs()
 
         # ---- right: tabs, editor, export --------------------------------
         right.grid_rowconfigure(1, weight=1)
@@ -204,6 +247,32 @@ class RecipeStudioApp(ctk.CTk):
             font=FONT_UI_SMALL,
         )
         self.status_label.grid(row=1, column=0, sticky="ew", padx=14, pady=(2, 6))
+
+    # ------------------------------------------------------------------
+    def _update_left_tabs(self) -> None:
+        for key, button in self.left_tab_buttons.items():
+            active = key == self.left_tab
+            button.configure(
+                fg_color=COLORS["accent"] if active else COLORS["panel_alt"],
+                text_color=COLORS["panel"] if active else COLORS["text_dim"],
+            )
+
+    def show_left_tab(self, name: str) -> None:
+        if name not in ("items", "recipes"):
+            return
+        self.left_tab = name
+        if name == "items":
+            self.recipe_panel.grid_remove()
+            self.items_view.grid()
+            self.set_status(f"{len(self._all_entries)} items")
+        else:
+            self.items_view.grid_remove()
+            self.recipe_panel.grid()
+            self.recipe_panel.refresh()
+            self.set_status(
+                f"Recipe browser · {len(self.recipe_index.records)} recipes"
+            )
+        self._update_left_tabs()
 
     # ------------------------------------------------------------------
     def _load_tab_icon(self, module):
@@ -528,6 +597,47 @@ class RecipeStudioApp(ctk.CTk):
         self.update_export()
 
     # ------------------------------------------------------------------
+    # Indexed recipes
+    # ------------------------------------------------------------------
+    def module_title(self, module_id: str) -> str:
+        for module in self.modules:
+            if module.id == module_id:
+                return module.title
+        return ""
+
+    def start_recipe_index(self, paths) -> None:
+        self.recipe_panel.start_indexing(paths)
+
+    def import_indexed_recipe(self, record) -> None:
+        try:
+            recipe = load_imported_recipe(record)
+        except Exception as exc:
+            self.set_status(f"Import failed: {type(exc).__name__}: {exc}", error=True)
+            return
+        self.apply_imported_recipe(recipe)
+
+    def copy_recipe_removal(self, record) -> None:
+        snippet = removal_snippet(
+            record.recipe_id or None, record.outputs, record.inputs
+        )
+        if not snippet:
+            self.set_status(
+                "Cannot build removal code: recipe has no id, output or input",
+                error=True,
+            )
+            return
+        self.clipboard_clear()
+        self.clipboard_append(snippet)
+        self.update_idletasks()
+        label = record.recipe_id or record.display_name
+        self.set_status(f"Copied remove snippet: {label}")
+
+    def remove_indexed_recipe(self, record) -> None:
+        if self.recipe_index.remove(record.key):
+            self.recipe_panel.refresh()
+            self.set_status(f"Removed from list: {record.display_name}")
+
+    # ------------------------------------------------------------------
     # Hotkeys
     # ------------------------------------------------------------------
     def _bind_hotkeys(self) -> None:
@@ -535,6 +645,8 @@ class RecipeStudioApp(ctk.CTk):
             self.bind_all(sequence, self._hotkey_focus_or_mode, add="+")
         for sequence in ("<Control-e>", "<Control-E>"):
             self.bind_all(sequence, self._hotkey_export, add="+")
+        for sequence in ("<Control-Tab>", "<Control-KeyPress-Tab>"):
+            self.bind_all(sequence, self._hotkey_left_tab, add="+")
         for sequence in ("<Control-a>", "<Control-A>"):
             self.bind_all(sequence, self._hotkey_favourites, add="+")
         for sequence in ("<KeyPress-a>", "<KeyPress-A>"):
@@ -567,6 +679,10 @@ class RecipeStudioApp(ctk.CTk):
     def _hotkey_export(self, event):
         force = bool(event.state & 0x0001)
         self.copy_export(force)
+        return "break"
+
+    def _hotkey_left_tab(self, _event=None):
+        self.show_left_tab("recipes" if self.left_tab == "items" else "items")
         return "break"
 
     def _hotkey_favourites(self, event):
@@ -644,6 +760,10 @@ class RecipeStudioApp(ctk.CTk):
             self.set_status(f"Name cache ready ({len(self.names.names)} names)")
 
     def _on_close(self) -> None:
+        try:
+            self.recipe_panel.shutdown()
+        except Exception:
+            pass
         try:
             self.drag_manager.cleanup()
         except Exception:

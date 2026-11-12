@@ -37,6 +37,9 @@ class ImportedRecipe:
     state: dict
     format: str
     warnings: list[str] = field(default_factory=list)
+    type_id: str | None = None
+    recipe_id: str | None = None
+    call_index: int = -1
 
 
 # ============================================================== JS parser ==
@@ -657,6 +660,140 @@ def _module_for_type(recipe_type: str) -> str | None:
     return None
 
 
+def module_id_for_type(recipe_type: str) -> str | None:
+    """Return the RecipeStudio module for a datapack recipe type."""
+    return _module_for_type(recipe_type)
+
+
+def _type_for_module(module_id: str) -> str | None:
+    if module_id == "vanilla.crafting":
+        return "minecraft:crafting_shaped"
+    for name, candidate in _VANILLA_TYPES.items():
+        if candidate == module_id:
+            return f"minecraft:{name}"
+    for name, candidate in _CREATE_TYPES.items():
+        if candidate == module_id:
+            return f"create:{name}"
+    return None
+
+
+def _collect_ids(value, result: list[str]) -> None:
+    if value is None:
+        return
+    if isinstance(value, list):
+        for entry in value:
+            _collect_ids(entry, result)
+        return
+    if isinstance(value, str):
+        if value:
+            result.append(value)
+        return
+    if not isinstance(value, dict):
+        return
+    if value.get("kind") == "empty":
+        return
+    item_id = value.get("id")
+    if item_id:
+        result.append(str(item_id))
+
+
+def _state_ids(state: dict, keys: tuple[str, ...]) -> list[str]:
+    result: list[str] = []
+    for key in keys:
+        _collect_ids(state.get(key), result)
+    return list(dict.fromkeys(result))
+
+
+def _state_output_ids(state: dict) -> list[str]:
+    """Best-effort list of output ids from every editor state shape."""
+    return _state_ids(
+        state,
+        (
+            "output",
+            "outputs",
+            "item_outputs",
+            "fluid_outputs",
+            "results",
+            "scrap",
+            "item_output",
+            "fluid_output",
+        ),
+    )
+
+
+def _state_input_ids(state: dict) -> list[str]:
+    """Best-effort list of input ids from every editor state shape."""
+    return _state_ids(
+        state,
+        (
+            "input",
+            "inputs",
+            "item_input",
+            "fluid_input",
+            "item_inputs",
+            "fluid_inputs",
+            "depot",
+            "held",
+            "start",
+            "template",
+            "base",
+            "addition",
+        ),
+    )
+
+
+def target_mod_for_outputs(outputs: list[str] | tuple[str, ...]) -> str:
+    for output in outputs:
+        text = str(output).lstrip("#")
+        if ":" in text:
+            return text.split(":", 1)[0]
+    return "unknown"
+
+
+def removal_snippet(
+    recipe_id: str | None,
+    outputs: list[str] | tuple[str, ...] = (),
+    inputs: list[str] | tuple[str, ...] = (),
+) -> str:
+    """Build a KubeJS snippet that removes a recipe from an existing pack."""
+    lines: list[str] = []
+    if recipe_id:
+        lines.append(f"  event.remove({{ id: {_js_quote(recipe_id)} }});")
+    elif outputs:
+        for output in dict.fromkeys(str(item) for item in outputs if item):
+            lines.append(f"  event.remove({{ output: {_js_quote(output)} }});")
+    elif inputs:
+        for input_id in dict.fromkeys(str(item) for item in inputs if item):
+            lines.append(f"  event.remove({{ input: {_js_quote(input_id)} }});")
+    if not lines:
+        return ""
+    return "ServerEvents.recipes((event) => {\n" + "\n".join(lines) + "\n});"
+
+
+def _js_quote(value: str) -> str:
+    escaped = str(value).replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
+def _apply_metadata(
+    recipe: ImportedRecipe, call: _Call | None = None
+) -> ImportedRecipe:
+    if recipe.type_id is None:
+        recipe.type_id = _type_for_module(recipe.module_id)
+        if recipe.module_id == "vanilla.crafting":
+            recipe.type_id = (
+                "minecraft:crafting_shapeless"
+                if recipe.state.get("shapeless")
+                else "minecraft:crafting_shaped"
+            )
+    if call is not None and recipe.recipe_id is None:
+        _, _, methods = _decompose_chain(call)
+        recipe_id = _method_value(methods, "id")
+        if isinstance(recipe_id, str) and recipe_id:
+            recipe.recipe_id = recipe_id
+    return recipe
+
+
 def _empty_grid(rows: int = 3, cols: int = 3) -> list[list[dict]]:
     return [[Ingredient().to_dict() for _ in range(cols)] for _ in range(rows)]
 
@@ -1060,6 +1197,7 @@ def _from_json(data: Any, fmt: str = "JSON") -> ImportedRecipe:
         name = recipe_type.split(":", 1)[1]
         recipe = _create_from_json(data, name, module_id, warnings)
     recipe.format = fmt
+    recipe.type_id = recipe_type
     return recipe
 
 
@@ -1541,12 +1679,7 @@ def _try_json(text: str) -> Any | None:
 
 
 def parse_recipe(text: str) -> ImportedRecipe:
-    """Parse a KubeJS snippet or a datapack JSON recipe.
-
-    Raises:
-        RecipeImportError: the text is empty, unknown, or uses an unsupported
-            recipe type.  The message is safe to show in the GUI.
-    """
+    """Parse the first supported KubeJS or datapack JSON recipe."""
     source = _strip_code_fence(text or "")
     if not source:
         raise RecipeImportError("Вставь KubeJS-код или JSON-рецепт")
@@ -1555,9 +1688,8 @@ def parse_recipe(text: str) -> ImportedRecipe:
     if data is not None:
         return _from_json(data, "vanilla JSON" if _looks_vanilla(data) else "JSON")
 
-    calls = _find_event_calls(source)
-    if not calls:
-        # Give a more useful hint than a generic parser failure.
+    recipes = iter_imported_recipes(source)
+    if not recipes:
         if "{" in source and "type" in source:
             raise RecipeImportError(
                 "Похоже на рецепт, но не удалось разобрать синтаксис. "
@@ -1567,31 +1699,51 @@ def parse_recipe(text: str) -> ImportedRecipe:
             "Не найден рецепт. Поддерживаются event.custom({...}), "
             "native KubeJS-вызовы и JSON датапака."
         )
+    recipe = recipes[0]
+    if len(recipes) > 1:
+        recipe.warnings.append("Найдено несколько рецептов; импортирован первый")
+    return recipe
 
-    warnings: list[str] = []
-    last_error: RecipeImportError | None = None
-    for call in calls:
+
+def iter_imported_recipes(text: str) -> list[ImportedRecipe]:
+    """Parse all supported recipes from a KubeJS file or JSON document.
+
+    Unsupported calls are ignored so a single file with many recipes can be
+    indexed without one bad entry aborting the whole file.
+    """
+    source = _strip_code_fence(text or "")
+    if not source:
+        return []
+
+    data = _try_json(source)
+    if data is not None:
+        documents = data if isinstance(data, list) else [data]
+        recipes: list[ImportedRecipe] = []
+        for index, document in enumerate(documents):
+            if not isinstance(document, dict):
+                continue
+            try:
+                recipe = _from_json(
+                    document,
+                    "vanilla JSON" if _looks_vanilla(document) else "JSON",
+                )
+            except RecipeImportError:
+                continue
+            recipe.call_index = index
+            recipes.append(recipe)
+        return recipes
+
+    recipes = []
+    for index, call in enumerate(_find_event_calls(source)):
+        warnings: list[str] = []
         try:
             recipe = _from_call(call, warnings)
-        except RecipeImportError as exc:
-            # Keep looking: KubeJS files often contain several calls and the
-            # first one may be event.remove() or an unrelated helper.
-            last_error = exc
+        except RecipeImportError:
             continue
         if recipe is not None:
-            if len(calls) > 1:
-                recipe.warnings.append(
-                    "Найдено несколько рецептов; импортирован первый"
-                )
-            return recipe
-
-    if last_error is not None:
-        raise last_error
-    details = ", ".join(filter(None, (_path(call.func) for call in calls)))
-    raise RecipeImportError(
-        "В KubeJS-коде не найден поддерживаемый рецепт"
-        + (f" (вызовы: {details})" if details else "")
-    )
+            recipe.call_index = index
+            recipes.append(_apply_metadata(recipe, call))
+    return recipes
 
 
 def _looks_vanilla(data: Any) -> bool:
