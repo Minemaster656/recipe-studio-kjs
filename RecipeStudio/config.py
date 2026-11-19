@@ -15,9 +15,20 @@ import json
 from pathlib import Path
 from typing import Any
 
+import platformdirs
+
 PACKAGE_DIR = Path(__file__).resolve().parent
 SCRIPTS_DIR = PACKAGE_DIR.parent
 CONFIG_PATH = PACKAGE_DIR / "config.json"
+
+APP_NAME = "recipe-studio"
+
+
+def app_data_dir() -> Path:
+    """Per-user data directory (projects, caches) shared by all checkouts."""
+    return Path(
+        platformdirs.user_data_dir(APP_NAME, appauthor=False)
+    ).expanduser()
 
 # Keys that used to live in config.json before the project system existed.
 LEGACY_PROJECT_KEYS = (
@@ -38,7 +49,7 @@ LEGACY_PROJECT_KEYS = (
 # Application-wide defaults.  Paths are absolute so the app never has to guess
 # the working directory.
 DEFAULT_CONFIG: dict[str, Any] = {
-    "projects_dir": str(SCRIPTS_DIR / "projects"),
+    "projects_dir": str(app_data_dir() / "projects"),
     "active_project": None,
     "start_maximized": False,
 }

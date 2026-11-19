@@ -66,8 +66,11 @@ Python 3.14 и зависимости (примерно 150–250 МБ). Это 
 ## Где хранятся настройки
 
 - `RecipeStudio\config.json` — папка проектов и активный проект.
-- `projects\<slug>.json` — профиль сборки: пути к иконкам, базе, `mods` и
-  `kubejs`, избранное и кэш имён. Все пути абсолютные.
-- `RecipeStudio\data\projects\<slug>\names_cache.json` — кэш названий.
-- `RecipeStudio\data\projects\<slug>\favorites.json` — избранное (создаётся
-  при первом добавлении).
+- `%LOCALAPPDATA%\recipe-studio\projects\<slug>.json` — профиль сборки: пути
+  к иконкам, базе, `mods` и `kubejs`, избранное и кэш имён. Все пути
+  абсолютные.
+- `%LOCALAPPDATA%\recipe-studio\data\<slug>\names_cache.json` — кэш названий.
+- `%LOCALAPPDATA%\recipe-studio\data\<slug>\favorites.json` — избранное
+  (создаётся при первом добавлении).
+
+Папку проектов можно перенести в `config.json` → `projects_dir`.

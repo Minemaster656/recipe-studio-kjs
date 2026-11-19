@@ -13,6 +13,7 @@ dependencies = [
     "numpy>=2.5.4",
     "openai>=3.46.0",
     "pillow>=11.0.0",
+    "platformdirs>=4.14.7",
     "rich>=15.0.0",
     "schemafunc>=0.3.19",
     "sqlite-vec>=0.1.9",

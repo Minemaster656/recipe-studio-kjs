@@ -259,6 +259,12 @@ class ProjectDialog(ctk.CTkToplevel):
                 for line in box.get("1.0", "end").splitlines()
                 if line.strip()
             ]
+        if not values["recipe_sources"]:
+            values["recipe_sources"] = [
+                path
+                for path in (values.get("mods_dir"), values.get("kubejs_dir"))
+                if path
+            ]
         return values
 
     def _save(self) -> None:

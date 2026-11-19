@@ -34,13 +34,23 @@ projects/               профили сборок (по JSON-файлу на �
 
 | Ключ | Назначение |
 | --- | --- |
-| `projects_dir` | папка с профилями сборок |
+| `projects_dir` | папка с профилями сборок (по умолчанию — каталог данных `platformdirs`) |
 | `active_project` | путь к JSON-файлу активного проекта |
 | `start_maximized` | запускать окно развёрнутым |
 
+По умолчанию проекты и кэши лежат в каталоге данных пользователя
+(`platformdirs.user_data_dir("recipe-studio")`):
+
+- Linux: `~/.local/share/recipe-studio/projects`;
+- Windows: `%LOCALAPPDATA%\recipe-studio\projects`;
+- macOS: `~/Library/Application Support/recipe-studio/projects`.
+
+`projects_dir` в `config.json` переопределяет это место: можно держать
+профили рядом с модпаком или на переносимом диске.
+
 Старый плоский `config.json` (с `icons_dir`, `database`, `mods_dir` и т.д.)
-мигрирует автоматически: при первом запуске создаётся `projects/default.json`,
-а из глобального файла убираются ключи проекта.
+мигрирует автоматически: при первом запуске создаётся профиль `default` в
+`projects_dir`, а из глобального файла убираются ключи проекта.
 
 ### Профиль проекта
 
@@ -61,7 +71,7 @@ projects/               профили сборок (по JSON-файлу на �
 | `mods_dir`, `kubejs_dir` | источники названий предметов |
 | `extra_lang_jars` | дополнительные jar/zip с переводами |
 | `recipe_sources` | папки и файлы для индексации рецептов |
-| `auto_index` | индексировать `recipe_sources` при переключении |
+| `auto_index` | индексировать `mods_dir`, `kubejs_dir` и `recipe_sources` при переключении |
 | `favorites` | файл избранного (свой на проект) |
 | `names_cache` | кэш отображаемых имён (свой на проект) |
 | `search_limit` | максимум результатов поиска |
@@ -79,7 +89,7 @@ projects/               профили сборок (по JSON-файлу на �
 `items_json` и `icons_dir`; дубликаты схлопываются, иконка ищется в любом
 источнике.
 
-Кэши по умолчанию лежат в `RecipeStudio/data/projects/<slug>/`
+Кэши по умолчанию лежат в `.../recipe-studio/data/<slug>/`
 (`favorites.json`, `names_cache.json`), поэтому разные сборки не смешивают
 избранное и переводы.
 

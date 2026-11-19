@@ -255,12 +255,27 @@ class RecipePanel(ctk.CTkFrame):
         self.refresh()
 
     def auto_index(self) -> None:
-        """Index the recipe sources configured for the active project."""
-        raw = self.app.config.get("recipe_sources") or []
-        sources = [str(item) for item in raw if str(item).strip()]
-        existing = [item for item in sources if Path(item).exists()]
+        """Index the recipe sources configured for the active project.
+
+        ``recipe_sources`` may be empty; the mods and KubeJS folders are
+        indexed as well, since those are the two common layouts.
+        """
+        sources = [
+            str(item) for item in (self.app.config.get("recipe_sources") or [])
+            if str(item).strip()
+        ]
+        for key in ("mods_dir", "kubejs_dir"):
+            if self.app.config.get(key):
+                sources.append(str(self.app.config.path_for(key)))
+
+        unique: list[str] = []
+        for item in sources:
+            if item not in unique:
+                unique.append(item)
+
+        existing = [item for item in unique if Path(item).exists()]
         if not existing:
-            if sources:
+            if unique:
                 self._set_status("Источники рецептов не найдены", error=True)
             return
         self.start_indexing(existing)

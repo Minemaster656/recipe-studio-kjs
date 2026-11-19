@@ -91,6 +91,8 @@ class RecipeStudioApp(ctk.CTk):
 
         self.after(80, self.show_all_items)
         self.after(250, self._load_names_async)
+        if self.config.get("auto_index"):
+            self.after(400, self.recipe_panel.auto_index)
         if self.modules:
             self.show_module(self.modules[0])
         else:

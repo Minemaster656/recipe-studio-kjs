@@ -1,5 +1,5 @@
 {
-  "projects_dir": "/home/minemaster/dev/recipe-studio/projects",
-  "active_project": "/home/minemaster/dev/recipe-studio/projects/default.json",
+  "projects_dir": "/home/minemaster/.local/share/recipe-studio/projects",
+  "active_project": "/home/minemaster/.local/share/recipe-studio/projects/nkindur3-beta.json",
   "start_maximized": false
 }

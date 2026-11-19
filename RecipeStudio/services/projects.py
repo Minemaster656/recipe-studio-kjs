@@ -18,12 +18,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from RecipeStudio.config import (
-    CONFIG_PATH,
     DEFAULT_PROJECT,
     LEGACY_PROJECT_KEYS,
-    PACKAGE_DIR,
     SCRIPTS_DIR,
     Config,
+    app_data_dir,
 )
 
 PATH_KEYS = (
@@ -67,7 +66,7 @@ def _absolute_pattern(value: Any, base: Path) -> str:
 
 
 def projects_dir(app_config: Config) -> Path:
-    raw = app_config.get("projects_dir") or (SCRIPTS_DIR / "projects")
+    raw = app_config.get("projects_dir") or (app_data_dir() / "projects")
     path = _absolute(raw, SCRIPTS_DIR)
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -79,7 +78,7 @@ def projects_dir(app_config: Config) -> Path:
 def project_data_dir(slug: str) -> Path:
     safe = re.sub(r"[^\w.-]+", "-", str(slug or "project"), flags=re.UNICODE)
     safe = safe.strip("-._") or "project"
-    return (PACKAGE_DIR / "data" / "projects" / safe).resolve()
+    return (app_data_dir() / "data" / safe).resolve()
 
 
 def slugify(name: str) -> str:
