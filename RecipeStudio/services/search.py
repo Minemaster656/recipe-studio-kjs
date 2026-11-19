@@ -79,8 +79,12 @@ class SearchGateway:
         if api is None:
             raise SearchUnavailable(f"emb_api is unavailable: {self._api_error}")
         EmbeddingClient, SearchIndex, _EmbeddingError, _ImageNotSupported = api
+        if not self.config.get("database"):
+            raise SearchUnavailable(
+                "Embedding database is not configured for this project"
+            )
         db = self.config.path_for("database")
-        if not db.exists():
+        if not db.is_file():
             raise SearchUnavailable(f"Embedding database not found: {db}")
         client = None
         if embeddings:

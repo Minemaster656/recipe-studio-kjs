@@ -7,7 +7,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from RecipeStudio.config import Config, SCRIPTS_DIR
+from RecipeStudio.config import Config
 
 
 def prettify(item_id: str) -> str:
@@ -48,20 +48,25 @@ class NameResolver:
     def _collect_sources(self) -> list[Path]:
         """Return every file that can provide English display names."""
         paths: list[Path] = []
-        mods_dir = self.config.path_for("mods_dir")
-        try:
-            paths.extend(sorted(mods_dir.glob("*.jar")))
-        except OSError:
-            pass
+        if self.config.get("mods_dir"):
+            mods_dir = self.config.path_for("mods_dir")
+            try:
+                paths.extend(sorted(mods_dir.glob("*.jar")))
+            except OSError:
+                pass
 
-        kubejs = self.config.path_for("kubejs_dir")
-        try:
-            paths.extend(sorted((kubejs / "assets").glob("*/lang/en_us.json")))
-        except OSError:
-            pass
+        if self.config.get("kubejs_dir"):
+            kubejs = self.config.path_for("kubejs_dir")
+            try:
+                paths.extend(sorted((kubejs / "assets").glob("*/lang/en_us.json")))
+            except OSError:
+                pass
 
         for pattern in self.config.get("extra_lang_jars", []) or []:
-            for raw in glob.glob(str(SCRIPTS_DIR / str(pattern))):
+            raw_pattern = Path(str(pattern)).expanduser()
+            if not raw_pattern.is_absolute():
+                raw_pattern = self.config.base_dir / raw_pattern
+            for raw in glob.glob(str(raw_pattern)):
                 p = Path(raw)
                 if p.is_file():
                     paths.append(p)

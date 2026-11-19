@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 from RecipeStudio.model.ingredient import Ingredient
@@ -95,8 +96,34 @@ class IconCache:
         except Exception:
             return None
 
+    def _from_bytes(self, data: bytes, key: str, size: int):
+        cache_key = ("bytes", key, size)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        if Image is None or ImageTk is None:
+            return None
+        try:
+            with Image.open(io.BytesIO(data)) as source:
+                img = source.convert("RGBA")
+            if img.size != (size, size):
+                resample = (
+                    Image.Resampling.LANCZOS
+                    if img.width > size
+                    else Image.Resampling.NEAREST
+                )
+                img = img.resize((size, size), resample)
+            photo = ImageTk.PhotoImage(img)
+            self._cache[cache_key] = photo
+            return photo
+        except Exception:
+            return None
+
     # ------------------------------------------------------------------
     def get_entry(self, entry: CatalogEntry, size: int = 32):
+        if entry.icon_data is not None:
+            photo = self._from_bytes(entry.icon_data, entry.id, size)
+            if photo is not None:
+                return photo
         if entry.icon_path is not None:
             photo = self._from_path(entry.icon_path, size)
             if photo is not None:

@@ -25,6 +25,7 @@ class RecipePanel(ctk.CTkFrame):
         self.group_by = "type"
         self._indexing = False
         self._cancel_event: threading.Event | None = None
+        self._index_gen = 0
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(5, weight=1)
@@ -216,18 +217,41 @@ class RecipePanel(ctk.CTkFrame):
             self.start_indexing([path])
 
     def _add_mods(self) -> None:
+        if not self.app.config.get("mods_dir"):
+            self._set_status("Папка модов не задана в проекте", error=True)
+            return
         path = self.app.config.path_for("mods_dir")
-        if path.exists():
+        if path.is_dir():
             self.start_indexing([path])
         else:
             self._set_status(f"Папка модов не найдена: {path}", error=True)
 
     def _add_kubejs(self) -> None:
+        if not self.app.config.get("kubejs_dir"):
+            self._set_status("Папка KubeJS не задана в проекте", error=True)
+            return
         path = self.app.config.path_for("kubejs_dir")
-        if path.exists():
+        if path.is_dir():
             self.start_indexing([path])
         else:
             self._set_status(f"Папка KubeJS не найдена: {path}", error=True)
+
+    def set_index(self, index: RecipeIndex) -> None:
+        """Switch to a fresh index, ignoring any in-flight indexer callbacks."""
+        self._index_gen += 1
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        self._cancel_event = None
+        self._indexing = False
+        self.index = index
+        try:
+            self.progress_frame.grid_remove()
+            self.progress_bar.set(0)
+            self.progress_label.configure(text="")
+            self.cancel_button.configure(state="normal", text="Отмена")
+        except Exception:
+            pass
+        self.refresh()
 
     # ------------------------------------------------------------------
     def start_indexing(self, paths) -> None:
@@ -238,6 +262,8 @@ class RecipePanel(ctk.CTkFrame):
         if not cleaned:
             return
 
+        self._index_gen += 1
+        gen = self._index_gen
         self._indexing = True
         self._cancel_event = threading.Event()
         self.progress_frame.grid()
@@ -247,10 +273,10 @@ class RecipePanel(ctk.CTkFrame):
         self._set_status(f"Индексация: {len(cleaned)} источник(ов)")
 
         def progress(done: int, total: int, label: str) -> None:
-            self.app._post(lambda: self._on_progress(done, total, label))
+            self.app._post(lambda: self._on_progress(gen, done, total, label))
 
         def done(result: IndexResult) -> None:
-            self.app._post(lambda: self._on_done(result))
+            self.app._post(lambda: self._on_done(gen, result))
 
         indexer = RecipeIndexer(
             self.index,
@@ -263,7 +289,7 @@ class RecipePanel(ctk.CTkFrame):
             try:
                 indexer.index_paths(cleaned)
             except Exception as exc:  # noqa: BLE001 - never crash the GUI thread
-                self.app._post(lambda: self._on_failed(exc))
+                self.app._post(lambda: self._on_failed(gen, exc))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -273,11 +299,12 @@ class RecipePanel(ctk.CTkFrame):
             self.cancel_button.configure(state="disabled", text="Останавливаю…")
 
     def shutdown(self) -> None:
+        self._index_gen += 1
         if self._cancel_event is not None:
             self._cancel_event.set()
 
-    def _on_progress(self, done: int, total: int, label: str) -> None:
-        if not self._indexing:
+    def _on_progress(self, gen: int, done: int, total: int, label: str) -> None:
+        if gen != self._index_gen or not self._indexing:
             return
         fraction = (done / total) if total else 0.0
         self.progress_bar.set(max(0.0, min(1.0, fraction)))
@@ -286,7 +313,9 @@ class RecipePanel(ctk.CTkFrame):
         else:
             self.progress_label.configure(text="Нет файлов для индексации")
 
-    def _on_done(self, result: IndexResult) -> None:
+    def _on_done(self, gen: int, result: IndexResult) -> None:
+        if gen != self._index_gen:
+            return
         self._indexing = False
         self._cancel_event = None
         self.progress_bar.set(1.0)
@@ -305,7 +334,9 @@ class RecipePanel(ctk.CTkFrame):
         else:
             self._set_status(message, error=False)
 
-    def _on_failed(self, exc: Exception) -> None:
+    def _on_failed(self, gen: int, exc: Exception) -> None:
+        if gen != self._index_gen:
+            return
         self._indexing = False
         self._cancel_event = None
         self.progress_frame.grid_remove()
