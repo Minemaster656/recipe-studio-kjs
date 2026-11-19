@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import customtkinter as ctk
@@ -19,9 +18,10 @@ from RecipeStudio.recipes.base import (
 from RecipeStudio.recipes.create.common import (
     CreateEditorBase,
     ingredient_json,
+    js_array,
     result_json,
 )
-from RecipeStudio.services.codegen import item_literal
+from RecipeStudio.services.codegen import item_literal, quote
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
 STEP_TYPES = {
@@ -157,6 +157,24 @@ class SequenceStep(ctk.CTkFrame):
             recipe["ingredients"] = [ingredient_json(base)]
         recipe["results"] = [result_json(base)]
         return recipe
+
+    def serialize_native(
+        self, transitional: Ingredient, event_var: str = "event"
+    ) -> str:
+        base = transitional.copy()
+        base.count = 1
+        args = [item_literal(base)]
+        if self.type_var.get() == "Deploying":
+            args.append(item_literal(self.item_extra.ingredient))
+        elif self.type_var.get() == "Filling":
+            fluid = self.fluid_extra.ingredient.copy()
+            fluid.amount = self.amount.value()
+            args.append(item_literal(fluid))
+        method = self.type_var.get().lower()
+        return (
+            f"{event_var}.recipes.create.{method}"
+            f"({item_literal(base, output=True)}, {js_array([a for a in args if a])})"
+        )
 
     def clear(self) -> None:
         self.item_extra.clear(notify=False)
@@ -319,15 +337,19 @@ class SequencedAssemblyEditor(CreateEditorBase):
         start, transitional = self._inputs()  # type: ignore[misc]
         results = [i.copy() for i in self.results.ingredients()]
         results += [i.copy() for i in self.scrap.ingredients()]
-        recipe = {
-            "type": "create:sequenced_assembly",
-            "ingredient": ingredient_json(start),
-            "transitional_item": {"id": transitional.id},
-            "sequence": [step.serialize(transitional) for step in self.steps],
-            "results": [result_json(i) for i in results],
-            "loops": int(self.loops.get_value() or 1),
-        }
-        return f"{event_var}.custom({json.dumps(recipe, indent=2, ensure_ascii=False)})"
+        result_literals = [item_literal(i, output=True) for i in results]
+        result_literals = [x for x in result_literals if x]
+        steps = [step.serialize_native(transitional, event_var) for step in self.steps]
+        body = (
+            f"{event_var}.recipes.create.sequenced_assembly(\n"
+            f"  {js_array(result_literals)},\n"
+            f"  {item_literal(start)},\n"
+            f"  {js_array(steps)}\n"
+            ")"
+            f".transitionalItem({quote(transitional.id)})"
+            f".loops({int(self.loops.get_value() or 1)})"
+        )
+        return body
 
     def clear(self) -> None:
         self.start.clear(notify=False)

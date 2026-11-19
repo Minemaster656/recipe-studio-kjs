@@ -74,6 +74,61 @@ class RecipeImportTests(unittest.TestCase):
         self.assertEqual(steps[2]["fluid"]["amount"], 250)
         self.assertEqual(recipe.state["loops"], 2)
 
+    def test_native_create_item_with_count_and_chance(self):
+        recipe = parse_recipe(
+            "event.recipes.create.crushing("
+            "[CreateItem.of(Item.of('minecraft:iron_ore', 3), 0.25)], "
+            "'minecraft:stone')"
+        )
+        output = recipe.state["outputs"][0]
+        self.assertEqual(output["id"], "minecraft:iron_ore")
+        self.assertEqual(output["count"], 3)
+        self.assertEqual(output["chance"], 0.25)
+
+    def test_native_ore_excavation_merges_vein(self):
+        recipe = parse_recipe(
+            """
+            event.recipes.createoreexcavation.vein('Iron Vein', 'minecraft:iron_ore')
+              .id('kubejs:ore_vein_type/iron')
+              .veinSize(10, 30)
+              .placement(64, 8, 7)
+              .defaultFinite()
+              .biomeWhitelist('minecraft:is_overworld')
+            event.recipes.createoreexcavation.drilling(
+              [CreateItem.of('minecraft:iron_nugget', 0.5)],
+              'kubejs:ore_vein_type/iron',
+              600
+            ).drill('createoreexcavation:diamond_drill').stress(512)
+            """
+        )
+        self.assertEqual(recipe.module_id, "createoreexcavation.item_vein")
+        self.assertEqual(recipe.type_id, "createoreexcavation:drilling")
+        self.assertEqual(recipe.state["vein"]["name"], "Iron Vein")
+        self.assertEqual(recipe.state["vein"]["vein_id"], "kubejs:ore_vein_type/iron")
+        self.assertEqual(recipe.state["vein"]["salt"], 7)
+        self.assertEqual(recipe.state["drill"], "Diamond")
+        self.assertEqual(recipe.state["stress"], 512)
+        self.assertEqual(recipe.state["outputs"][0]["chance"], 0.5)
+
+    def test_json_ore_excavation_drilling(self):
+        recipe = parse_recipe(
+            """
+            {
+              "type": "createoreexcavation:drilling",
+              "output": [{"id": "minecraft:gold_nugget", "chance": 0.8}],
+              "veinId": "createoreexcavation:ore_vein_type/gold",
+              "ticks": 400,
+              "fluid": {"amount": 1000, "ingredient": {"fluid": "minecraft:lava"}}
+            }
+            """
+        )
+        self.assertEqual(recipe.module_id, "createoreexcavation.item_vein")
+        self.assertEqual(
+            recipe.state["vein"]["vein_id"], "createoreexcavation:ore_vein_type/gold"
+        )
+        self.assertEqual(recipe.state["fluid"]["id"], "minecraft:lava")
+        self.assertEqual(recipe.state["fluid_amount"], 1000)
+
     def test_unsupported_type_is_readable_error(self):
         with self.assertRaises(RecipeImportError) as context:
             parse_recipe('{"type": "minecraft:not_a_recipe"}')

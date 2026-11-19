@@ -501,38 +501,42 @@ def _ingredient_from_call(
     if not args:
         raise RecipeImportError(f"Пустой вызов ингредиента: {path}")
 
-    head = _string(args[0])
     tail = args[1:]
-    if path.endswith(("Fluid.of", "FluidStack", "FluidStack.of")):
+    if isinstance(args[0], _Call):
+        # ``CreateItem.of(Item.of('id', 2), 0.5)``
+        ingredient = _ingredient_from_call(args[0], output=output, warnings=warnings)
+    elif path.endswith(("Fluid.of", "FluidStack", "FluidStack.of")):
+        head = _string(args[0])
         amount = _int(tail[0], 1000) if tail else 1000
         ingredient = Ingredient(
             kind="fluid", id=normalize_fluid_id(head), amount=amount or 1000
         )
     else:
-        ingredient = _ingredient_from_string(head, output=output)
-        if output and tail:
-            second = tail[0]
-            if isinstance(second, (int, float)):
-                if "CreateItem" in path:
-                    ingredient.chance = float(second)
-                    if len(tail) > 1 and isinstance(tail[1], str):
-                        ingredient.nbt = tail[1]
-                else:
-                    ingredient.count = max(1, int(second))
-                    if len(tail) > 1 and isinstance(tail[1], str):
-                        ingredient.nbt = tail[1]
-            elif isinstance(second, str):
-                # ``Item.of('id', '{nbt}')``
-                if second.startswith("{"):
-                    ingredient.nbt = second
-                else:
-                    extra_count = _int(second, None)
-                    if extra_count is not None:
-                        ingredient.count = max(1, extra_count)
-        elif not output and tail:
-            # ``Ingredient.of('id', 2)`` / ``Item.of('id', 2)`` as an input.
-            if isinstance(tail[0], (int, float)):
-                ingredient.count = max(1, int(tail[0]))
+        ingredient = _ingredient_from_string(_string(args[0]), output=output)
+
+    if output and tail:
+        second = tail[0]
+        if isinstance(second, (int, float)):
+            if "CreateItem" in path:
+                ingredient.chance = float(second)
+                if len(tail) > 1 and isinstance(tail[1], str):
+                    ingredient.nbt = tail[1]
+            else:
+                ingredient.count = max(1, int(second))
+                if len(tail) > 1 and isinstance(tail[1], str):
+                    ingredient.nbt = tail[1]
+        elif isinstance(second, str):
+            # ``Item.of('id', '{nbt}')``
+            if second.startswith("{"):
+                ingredient.nbt = second
+            else:
+                extra_count = _int(second, None)
+                if extra_count is not None:
+                    ingredient.count = max(1, extra_count)
+    elif not output and tail:
+        # ``Ingredient.of('id', 2)`` / ``Item.of('id', 2)`` as an input.
+        if isinstance(tail[0], (int, float)):
+            ingredient.count = max(1, int(tail[0]))
 
     for name, margs in reversed(methods):
         low = name.lower()
@@ -639,6 +643,12 @@ _CREATE_SIMPLE = {
     "create.haunting",
 }
 
+_ORE_EXCAVATION_TYPES = {
+    "vein": "createoreexcavation.item_vein",
+    "drilling": "createoreexcavation.item_vein",
+    "extracting": "createoreexcavation.fluid_vein",
+}
+
 
 def _normalise_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
@@ -657,6 +667,8 @@ def _module_for_type(recipe_type: str) -> str | None:
         return _VANILLA_TYPES.get(name)
     if namespace == "create":
         return _CREATE_TYPES.get(name)
+    if namespace == "createoreexcavation":
+        return _ORE_EXCAVATION_TYPES.get(name)
     return None
 
 
@@ -1140,6 +1152,170 @@ def _sequenced_from_json(data: dict, warnings: list[str]) -> ImportedRecipe:
     )
 
 
+_ORE_TIER_BY_ID = {
+    "createoreexcavation:drill": "Iron",
+    "createoreexcavation:diamond_drill": "Diamond",
+    "createoreexcavation:netherite_drill": "Netherite",
+}
+
+
+def _component_state(value: Any) -> tuple[str, bool]:
+    if isinstance(value, dict):
+        if "translate" in value:
+            return str(value["translate"]), True
+        if "text" in value:
+            return str(value["text"]), False
+        return json.dumps(value, ensure_ascii=False), False
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError, TypeError:
+            return value, False
+        if isinstance(parsed, dict):
+            return _component_state(parsed)
+        return value, False
+    return "", False
+
+
+def _ore_tags(value: Any) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value if str(item).strip())
+    return str(value or "")
+
+
+def _vein_name_from_id(vein_id: str) -> str:
+    tail = vein_id.rsplit("/", 1)[-1]
+    return tail.replace("_", " ").title() or "Custom Vein"
+
+
+def _ore_vein_defaults(vein_id: str, *, fluid: bool = False) -> dict:
+    return {
+        "name": _vein_name_from_id(vein_id),
+        "translate": False,
+        "vein_id": vein_id,
+        "icon": Ingredient(
+            kind="item",
+            id="minecraft:water_bucket" if fluid else "minecraft:stone",
+        ).to_dict(),
+        "finite": "never" if fluid else "default",
+        "priority": 0,
+        "amount_min": 1.0,
+        "amount_max": 2.0,
+        "spacing": 64,
+        "separation": 8,
+        "salt": 0,
+        "whitelist": "",
+        "blacklist": "",
+    }
+
+
+def _ore_vein_state_from_json(
+    data: dict, warnings: list[str], *, fluid: bool = False
+) -> dict:
+    state = _ore_vein_defaults("kubejs:ore_vein_type/custom", fluid=fluid)
+    name, translate = _component_state(data.get("name"))
+    if name:
+        state["name"] = name
+        state["translate"] = translate
+    if data.get("icon"):
+        state["icon"] = _ingredient_dict(
+            data.get("icon"), output=True, warnings=warnings
+        )
+    finite = str(data.get("finite", "")).lower()
+    if finite in ("default", "never", "always"):
+        state["finite"] = finite
+    state["priority"] = _int(data.get("priority"), 0) or 0
+    state["amount_min"] = _number(data.get("amountMultiplierMin"), 1.0) or 1.0
+    state["amount_max"] = _number(data.get("amountMultiplierMax"), 2.0) or 2.0
+    placement = data.get("placement")
+    if isinstance(placement, dict):
+        state["spacing"] = _int(placement.get("spacing"), 64) or 64
+        state["separation"] = _int(placement.get("separation"), 8) or 8
+        state["salt"] = _int(placement.get("salt"), 0) or 0
+    state["whitelist"] = _ore_tags(data.get("biomeWhitelist"))
+    state["blacklist"] = _ore_tags(data.get("biomeBlacklist"))
+    return state
+
+
+def _ore_drill_tier(value: Any, warnings: list[str]) -> str:
+    if value is None:
+        return "Any"
+    ingredient = _to_ingredient(value, warnings=warnings)
+    if ingredient.kind == "tag" and ingredient.id == "createoreexcavation:drills":
+        return "Any"
+    return _ORE_TIER_BY_ID.get(ingredient.id, "Any")
+
+
+def _ore_required_fluid(value: Any, warnings: list[str]) -> tuple[dict, int]:
+    if not isinstance(value, dict):
+        return Ingredient().to_dict(), 1000
+    amount = _int(value.get("amount"), 1000) or 1000
+    raw = value.get("ingredient", value.get("fluid"))
+    ingredient = _to_ingredient(raw, warnings=warnings)
+    if not ingredient.is_empty:
+        ingredient.amount = amount
+    return ingredient.to_dict(), amount
+
+
+def _ore_drilling_state_from_json(
+    data: dict, warnings: list[str], *, fluid: bool = False
+) -> dict:
+    vein_id = _string(data.get("veinId")) or "kubejs:ore_vein_type/custom"
+    state = {
+        "vein": _ore_vein_defaults(vein_id, fluid=fluid),
+        "drill": _ore_drill_tier(data.get("drill"), warnings),
+        "ticks": _int(data.get("ticks"), 20 if fluid else 600) or 600,
+        "stress": _int(data.get("stress"), 256) or 256,
+        "recipe_priority": _int(data.get("priority"), 0) or 0,
+    }
+    required, amount = _ore_required_fluid(data.get("fluid"), warnings)
+    state["fluid"] = required
+    state["fluid_amount"] = amount
+    if fluid:
+        output = _to_ingredient(data.get("output"), output=True, warnings=warnings)
+        if output.is_empty:
+            output = Ingredient(kind="fluid", id="minecraft:water", amount=500)
+        if output.amount is None:
+            output.amount = 500
+        state["output"] = output.to_dict()
+        state["output_amount"] = output.amount
+    else:
+        state["outputs"] = _ingredient_dicts(
+            data.get("output"), output=True, warnings=warnings
+        )
+    return state
+
+
+def _ore_from_json(data: dict, name: str, warnings: list[str]) -> ImportedRecipe:
+    if name == "vein":
+        icon = data.get("icon")
+        icon_id = ""
+        if isinstance(icon, dict):
+            icon_id = str(icon.get("id", ""))
+        fluid = "bucket" in icon_id
+        return ImportedRecipe(
+            "createoreexcavation.fluid_vein"
+            if fluid
+            else "createoreexcavation.item_vein",
+            {"vein": _ore_vein_state_from_json(data, warnings, fluid=fluid)},
+            "JSON",
+            warnings,
+            type_id="createoreexcavation:vein",
+        )
+    if name in ("drilling", "extracting"):
+        fluid = name == "extracting"
+        return ImportedRecipe(
+            "createoreexcavation.fluid_vein"
+            if fluid
+            else "createoreexcavation.item_vein",
+            _ore_drilling_state_from_json(data, warnings, fluid=fluid),
+            "JSON",
+            warnings,
+            type_id=f"createoreexcavation:{name}",
+        )
+    raise RecipeImportError(f"Неподдерживаемый тип Ore Excavation: {name!r}")
+
+
 def _create_from_json(
     data: dict, name: str, module_id: str, warnings: list[str]
 ) -> ImportedRecipe:
@@ -1193,6 +1369,9 @@ def _from_json(data: Any, fmt: str = "JSON") -> ImportedRecipe:
             recipe = _smithing_from_json(data, warnings)
         else:
             raise RecipeImportError(f"Неподдерживаемый ванильный тип: {recipe_type!r}")
+    elif recipe_type.startswith("createoreexcavation:"):
+        name = recipe_type.split(":", 1)[1]
+        recipe = _ore_from_json(data, name, warnings)
     else:
         name = recipe_type.split(":", 1)[1]
         recipe = _create_from_json(data, name, module_id, warnings)
@@ -1561,6 +1740,132 @@ def _sequenced_from_call(
     )
 
 
+def _ore_native_name(path: str | None) -> str | None:
+    if not path:
+        return None
+    parts = path.split(".")
+    if len(parts) == 4 and parts[:3] == ["event", "recipes", "createoreexcavation"]:
+        return parts[3]
+    return None
+
+
+def _component_from_value(value: Any, warnings: list[str]) -> tuple[str, bool]:
+    if isinstance(value, _Call):
+        path = _path(value.func) or ""
+        if path.endswith(("Text.translate", "Component.translate")):
+            return _string(value.args[0]) if value.args else "", True
+        if path.endswith(
+            ("Text.of", "Text.literal", "Component.literal", "Component.of")
+        ):
+            return _string(value.args[0]) if value.args else "", False
+        warnings.append(f"Не удалось разобрать название жилы: {path}")
+        return "", False
+    if isinstance(value, str):
+        return value, False
+    return "", False
+
+
+def _ore_vein_state_from_call(
+    args: list[Any],
+    methods: list[tuple[str, list[Any]]],
+    warnings: list[str],
+) -> dict:
+    state = _ore_vein_defaults("kubejs:ore_vein_type/custom")
+    wildcard = False
+    if args:
+        state["name"], state["translate"] = _component_from_value(args[0], warnings)
+    if len(args) > 1:
+        state["icon"] = _ingredient_dict(args[1], output=True, warnings=warnings)
+
+    for name, margs in methods:
+        low = name.lower()
+        if low == "id" and margs:
+            state["vein_id"] = _string(margs[0])
+        elif low == "veinsize" and len(margs) >= 2:
+            state["amount_min"] = _number(margs[0], 1.0) or 1.0
+            state["amount_max"] = _number(margs[1], 2.0) or 2.0
+        elif low == "placement" and len(margs) >= 3:
+            state["spacing"] = _int(margs[0], 64) or 64
+            state["separation"] = _int(margs[1], 8) or 8
+            state["salt"] = _int(margs[2], 0) or 0
+        elif low == "priority" and margs:
+            state["priority"] = _int(margs[0], 0) or 0
+        elif low == "biomewhitelist" and margs:
+            state["whitelist"] = _ore_tags([state["whitelist"], _string(margs[0])])
+        elif low == "biomeblacklist" and margs:
+            state["blacklist"] = _ore_tags([state["blacklist"], _string(margs[0])])
+        elif low == "alwaysinfinite":
+            state["finite"] = "never"
+        elif low == "alwaysfinite":
+            state["finite"] = "always"
+        elif low == "defaultfinite":
+            state["finite"] = "default"
+        elif low == "spread" and margs:
+            warnings.append("spread() не переносится в редактор и будет потерян")
+        elif low == "reduction" and margs:
+            warnings.append("reduction() не переносится в редактор и будет потерян")
+    state["whitelist"] = _ore_tags(
+        [tag for tag in state["whitelist"].split(",") if tag.strip()]
+    )
+    state["blacklist"] = _ore_tags(
+        [tag for tag in state["blacklist"].split(",") if tag.strip()]
+    )
+    return state
+
+
+def _ore_excavating_state_from_call(
+    args: list[Any],
+    methods: list[tuple[str, list[Any]]],
+    warnings: list[str],
+    *,
+    fluid: bool,
+) -> dict:
+    vein_id = _string(args[1]) if len(args) > 1 else ""
+    if not vein_id:
+        vein_id = "kubejs:ore_vein_type/custom"
+    state: dict[str, Any] = {
+        "vein": _ore_vein_defaults(vein_id, fluid=fluid),
+        "drill": "Any",
+        "ticks": _int(args[2], 20 if fluid else 600)
+        if len(args) > 2
+        else (20 if fluid else 600),
+        "stress": 256,
+        "recipe_priority": 0,
+        "fluid": Ingredient().to_dict(),
+        "fluid_amount": 1000,
+    }
+    if fluid:
+        output = _to_ingredient(
+            args[0] if args else None, output=True, warnings=warnings
+        )
+        if output.is_empty:
+            output = Ingredient(kind="fluid", id="minecraft:water", amount=500)
+        if output.amount is None:
+            output.amount = 500
+        state["output"] = output.to_dict()
+        state["output_amount"] = output.amount
+    else:
+        state["outputs"] = _ingredient_dicts(
+            args[0] if args else [], output=True, warnings=warnings
+        )
+
+    for name, margs in methods:
+        low = name.lower()
+        if low == "drill" and margs:
+            state["drill"] = _ore_drill_tier(margs[0], warnings)
+        elif low == "stress" and margs:
+            state["stress"] = _int(margs[0], 256) or 256
+        elif low == "priority" and margs:
+            state["recipe_priority"] = _int(margs[0], 0) or 0
+        elif low == "fluid" and margs:
+            required = _to_ingredient(margs[0], warnings=warnings)
+            amount = required.amount or 1000
+            required.amount = amount
+            state["fluid"] = required.to_dict()
+            state["fluid_amount"] = amount
+    return state
+
+
 def _create_native_name(path: str | None) -> str | None:
     if not path:
         return None
@@ -1629,6 +1934,34 @@ def _from_call(call: _Call, warnings: list[str]) -> ImportedRecipe | None:
             warnings,
         )
 
+    ore_name = _ore_native_name(path)
+    if ore_name is not None:
+        if ore_name == "vein":
+            state = {"vein": _ore_vein_state_from_call(args, methods, warnings)}
+            icon_id = str(state["vein"].get("icon", {}).get("id", ""))
+            fluid = "bucket" in icon_id
+            return ImportedRecipe(
+                "createoreexcavation.fluid_vein"
+                if fluid
+                else "createoreexcavation.item_vein",
+                state,
+                "KubeJS native",
+                warnings,
+                type_id="createoreexcavation:vein",
+            )
+        if ore_name in ("drilling", "extracting"):
+            fluid = ore_name == "extracting"
+            return ImportedRecipe(
+                "createoreexcavation.fluid_vein"
+                if fluid
+                else "createoreexcavation.item_vein",
+                _ore_excavating_state_from_call(args, methods, warnings, fluid=fluid),
+                "KubeJS native",
+                warnings,
+                type_id=f"createoreexcavation:{ore_name}",
+            )
+        raise RecipeImportError(f"Неподдерживаемый рецепт Ore Excavation: {ore_name!r}")
+
     create_name = _create_native_name(path)
     if create_name is None:
         warnings.append(f"Пропущен неизвестный вызов {path}")
@@ -1686,6 +2019,14 @@ def parse_recipe(text: str) -> ImportedRecipe:
 
     data = _try_json(source)
     if data is not None:
+        recipes = iter_imported_recipes(source)
+        if recipes:
+            recipe = recipes[0]
+            if len(recipes) > 1:
+                recipe.warnings.append(
+                    "Найдено несколько рецептов; импортирован первый"
+                )
+            return recipe
         return _from_json(data, "vanilla JSON" if _looks_vanilla(data) else "JSON")
 
     recipes = iter_imported_recipes(source)
@@ -1703,6 +2044,48 @@ def parse_recipe(text: str) -> ImportedRecipe:
     if len(recipes) > 1:
         recipe.warnings.append("Найдено несколько рецептов; импортирован первый")
     return recipe
+
+
+def _merge_ore_veins(recipes: list[ImportedRecipe]) -> list[ImportedRecipe]:
+    """Attach a preceding vein recipe to its drilling/extracting recipe."""
+    merged: list[ImportedRecipe] = []
+    pending: ImportedRecipe | None = None
+    for recipe in recipes:
+        if recipe.type_id == "createoreexcavation:vein":
+            if pending is not None:
+                merged.append(pending)
+            pending = recipe
+            continue
+        if recipe.type_id in (
+            "createoreexcavation:drilling",
+            "createoreexcavation:extracting",
+        ):
+            vein_id = str(recipe.state.get("vein", {}).get("vein_id", ""))
+            if pending is not None:
+                pending_id = str(pending.state.get("vein", {}).get("vein_id", ""))
+                if not pending_id or pending_id == vein_id:
+                    recipe.state["vein"] = pending.state["vein"]
+                    recipe.call_index = min(recipe.call_index, pending.call_index)
+                    pending = None
+                else:
+                    merged.append(pending)
+                    pending = None
+                    recipe.warnings.append(
+                        "В файле нет жилы с id "
+                        f"{vein_id!r}; поля жилы оставлены по умолчанию"
+                    )
+            else:
+                recipe.warnings.append(
+                    f"Жила {vein_id!r} не найдена в этом файле; "
+                    "поля жилы оставлены по умолчанию"
+                )
+        elif pending is not None:
+            merged.append(pending)
+            pending = None
+        merged.append(recipe)
+    if pending is not None:
+        merged.append(pending)
+    return merged
 
 
 def iter_imported_recipes(text: str) -> list[ImportedRecipe]:
@@ -1731,7 +2114,7 @@ def iter_imported_recipes(text: str) -> list[ImportedRecipe]:
                 continue
             recipe.call_index = index
             recipes.append(recipe)
-        return recipes
+        return _merge_ore_veins(recipes)
 
     recipes = []
     for index, call in enumerate(_find_event_calls(source)):
@@ -1743,7 +2126,7 @@ def iter_imported_recipes(text: str) -> list[ImportedRecipe]:
         if recipe is not None:
             recipe.call_index = index
             recipes.append(_apply_metadata(recipe, call))
-    return recipes
+    return _merge_ore_veins(recipes)
 
 
 def _looks_vanilla(data: Any) -> bool:

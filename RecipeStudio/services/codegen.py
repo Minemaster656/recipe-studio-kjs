@@ -40,7 +40,12 @@ def item_literal(ing: Ingredient, *, output: bool = False) -> str | None:
 
     if output:
         if ing.chance is not None:
-            return f"CreateItem.of({quote(rid)}, {format_number(ing.chance)}{nbt_part})"
+            if ing.count > 1 or ing.nbt:
+                count_part = f", {ing.count}" if ing.count != 1 else ""
+                stack = f"Item.of({quote(rid)}{count_part}{nbt_part})"
+            else:
+                stack = quote(rid)
+            return f"CreateItem.of({stack}, {format_number(ing.chance)})"
         if ing.count > 1 or ing.nbt:
             count_part = f", {ing.count}" if ing.count != 1 else ""
             return f"Item.of({quote(rid)}{count_part}{nbt_part})"

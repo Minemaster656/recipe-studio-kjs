@@ -18,6 +18,7 @@ from RecipeStudio.recipes.base import (
     ingredient_from_state,
     ingredients_from_state,
 )
+from RecipeStudio.services.codegen import item_literal
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
 
@@ -64,6 +65,57 @@ def custom_body(
     recipe.update(extra)
     recipe["type"] = recipe_type
     return f"{event_var}.custom({json.dumps(recipe, indent=2, ensure_ascii=False)})"
+
+
+def js_array(items: list[str], indent: int = 2) -> str:
+    """Format a JS array, keeping short arrays on one line."""
+    if not items:
+        return "[]"
+    if len(items) == 1:
+        return f"[{items[0]}]"
+    pad = " " * indent
+    inner = ",\n".join(f"{pad}  {item}" for item in items)
+    return "[\n" + inner + "\n" + pad + "]"
+
+
+def native_body(
+    event_var: str,
+    method: str,
+    ingredients: list[Ingredient],
+    results: list[Ingredient],
+    *,
+    processing_time: int | None = None,
+    heat: str | None = None,
+    keep_held: bool = False,
+) -> str:
+    """Emit a native KubeJS Create recipe call.
+
+    Chances are carried by ``CreateItem.of(...)`` so KubeJS/Create never has
+    to re-parse a custom JSON object.
+    """
+    result_literals = [item_literal(i, output=True) for i in results]
+    input_literals = [item_literal(i) for i in ingredients]
+    result_literals = [x for x in result_literals if x]
+    input_literals = [x for x in input_literals if x]
+
+    body = (
+        f"{event_var}.recipes.create.{method}(\n"
+        f"  {js_array(result_literals)},\n"
+        f"  {js_array(input_literals)}\n"
+        ")"
+    )
+    chains: list[str] = []
+    if processing_time is not None:
+        chains.append(f"processingTime({int(processing_time)})")
+    if heat == "heated":
+        chains.append("heated()")
+    elif heat == "superheated":
+        chains.append("superheated()")
+    if keep_held:
+        chains.append("keepHeldItem()")
+    if chains:
+        body += "." + ".".join(chains)
+    return body
 
 
 class CreateEditorBase(RecipeEditor):
@@ -215,15 +267,17 @@ class SimpleProcessEditor(CreateEditorBase):
     def serialize(self, event_var: str = "event") -> str:
         if self.validate():
             return ""
-        extra = {}
-        if self.time is not None and self.time.get_ticks() is not None:
-            extra["processing_time"] = int(self.time.get_ticks())
-        return custom_body(
+        method = self.module.recipe_type.split(":", 1)[-1]
+        return native_body(
             event_var,
-            self.module.recipe_type,
+            method,
             self._ingredients(),
             self._results(),
-            **extra,
+            processing_time=(
+                int(self.time.get_ticks())
+                if self.time is not None and self.time.get_ticks() is not None
+                else None
+            ),
         )
 
     def clear(self) -> None:
@@ -281,5 +335,7 @@ __all__ = [
     "SimpleProcessModule",
     "custom_body",
     "ingredient_json",
+    "js_array",
+    "native_body",
     "result_json",
 ]

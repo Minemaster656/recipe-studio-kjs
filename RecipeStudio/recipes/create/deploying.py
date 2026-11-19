@@ -12,7 +12,7 @@ from RecipeStudio.recipes.base import (
     ingredient_from_state,
     ingredients_from_state,
 )
-from RecipeStudio.recipes.create.common import CreateEditorBase, custom_body
+from RecipeStudio.recipes.create.common import CreateEditorBase, native_body
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
 
@@ -104,15 +104,12 @@ class DeployingEditor(CreateEditorBase):
     def serialize(self, event_var: str = "event") -> str:
         if self.validate():
             return ""
-        extra = {}
-        if self.keep_held.get():
-            extra["keep_held_item"] = True
-        return custom_body(
+        return native_body(
             event_var,
-            "create:deploying",
+            "deploying",
             [self.depot.ingredient, self.held.ingredient],
             self.outputs.ingredients(),
-            **extra,
+            keep_held=bool(self.keep_held.get()),
         )
 
     def clear(self) -> None:
