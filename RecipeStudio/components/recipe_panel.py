@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
@@ -252,6 +253,17 @@ class RecipePanel(ctk.CTkFrame):
         except Exception:
             pass
         self.refresh()
+
+    def auto_index(self) -> None:
+        """Index the recipe sources configured for the active project."""
+        raw = self.app.config.get("recipe_sources") or []
+        sources = [str(item) for item in raw if str(item).strip()]
+        existing = [item for item in sources if Path(item).exists()]
+        if not existing:
+            if sources:
+                self._set_status("Источники рецептов не найдены", error=True)
+            return
+        self.start_indexing(existing)
 
     # ------------------------------------------------------------------
     def start_indexing(self, paths) -> None:

@@ -17,6 +17,8 @@ wheels/
 # Local generated data
 embeddings.db
 RecipeStudio/data/favorites.json
+RecipeStudio/data/names_cache.json
+RecipeStudio/data/projects/
 dist/
 
 # Local DB backups

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
+from tkinter import filedialog
 
 import customtkinter as ctk
 
@@ -24,6 +25,14 @@ from RecipeStudio.services.codegen import build_export
 from RecipeStudio.services.favorites import Favorites
 from RecipeStudio.services.icons import IconCache
 from RecipeStudio.services.names import NameResolver
+from RecipeStudio.services.projects import (
+    ProjectError,
+    create_project,
+    list_projects,
+    load_project,
+    projects_dir,
+    save_project,
+)
 from RecipeStudio.services.recipe_import import removal_snippet
 from RecipeStudio.services.recipe_index import RecipeIndex, load_imported_recipe
 from RecipeStudio.services.search import SearchGateway, SearchMode, SearchUnavailable
@@ -31,20 +40,23 @@ from RecipeStudio.theme import COLORS, FONT_UI, FONT_UI_SMALL, FONT_UI_BOLD
 
 
 class RecipeStudioApp(ctk.CTk):
-    def __init__(self, config: Config):
+    def __init__(
+        self,
+        config: Config,
+        app_config: Config | None = None,
+        project_info=None,
+    ):
         super().__init__(fg_color=COLORS["bg"])
         self.config = config
-        self.title("Recipe Studio")
+        self.app_config = app_config if app_config is not None else Config()
+        self.project_info = project_info
+        self.title(self._window_title())
         self.geometry("1440x920")
         self.minsize(1000, 700)
         self._center()
 
-        self.catalog = Catalog(config)
-        self.names = NameResolver(config)
-        self.icons = IconCache(config.path_for("icons_dir"))
-        self.favorites = Favorites(config.path_for("favorites"))
-        self.search_gateway = SearchGateway(config, self.catalog)
         self.recipe_index = RecipeIndex()
+        self._build_data_services()
         self.tooltip = Tooltip(self)
         self.drag_manager = DragManager(self)
         self._context_menu: tk.Menu | None = None
@@ -70,6 +82,7 @@ class RecipeStudioApp(ctk.CTk):
         self._search_gen = 0
         self.favorites_only = False
         self._tab_images: list[ctk.CTkImage] = []
+        self._project_infos = []
 
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -84,6 +97,28 @@ class RecipeStudioApp(ctk.CTk):
             self.set_status("No recipe modules found", error=True)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ------------------------------------------------------------------
+    def _window_title(self) -> str:
+        name = str(self.config.get("name") or "Default")
+        return f"Recipe Studio — {name}"
+
+    def _build_data_services(self) -> None:
+        """(Re)create every service that depends on the active project."""
+        config = self.config
+        self.catalog = Catalog(config)
+        self.names = NameResolver(config)
+        icons_dir = config.path_for("icons_dir") if config.get("icons_dir") else None
+        self.icons = IconCache(icons_dir)
+        self.favorites = Favorites(config.path_for("favorites"))
+        self.search_gateway = SearchGateway(config, self.catalog)
+
+        ctx = getattr(self, "editor_ctx", None)
+        if ctx is not None:
+            ctx.catalog = self.catalog
+            ctx.names = self.names
+            ctx.icons = self.icons
+            ctx.config = config
 
     # ------------------------------------------------------------------
     def _center(self) -> None:
@@ -124,6 +159,51 @@ class RecipeStudioApp(ctk.CTk):
                 padx=(0, 4) if column == 0 else (4, 0),
             )
             self.global_tab_buttons[key] = button
+
+        # ---- project switcher -------------------------------------------
+        project_bar = ctk.CTkFrame(global_bar, fg_color="transparent")
+        project_bar.grid(row=0, column=2, sticky="e", padx=(16, 0))
+        ctk.CTkLabel(
+            project_bar,
+            text="PROJECT",
+            text_color=COLORS["text_muted"],
+            font=("DejaVu Sans", 10, "bold"),
+        ).grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.project_menu = ctk.CTkOptionMenu(
+            project_bar,
+            values=["Default"],
+            width=220,
+            height=30,
+            corner_radius=8,
+            fg_color=COLORS["panel_alt"],
+            button_color=COLORS["panel_hover"],
+            button_hover_color=COLORS["accent"],
+            text_color=COLORS["text"],
+            font=FONT_UI_SMALL,
+            command=self._on_project_selected,
+        )
+        self.project_menu.grid(row=0, column=1, sticky="w")
+        for column, (label, command) in enumerate(
+            (
+                ("New…", self.new_project),
+                ("Edit…", self.edit_project),
+                ("Open…", self.open_project),
+            ),
+            start=2,
+        ):
+            ctk.CTkButton(
+                project_bar,
+                text=label,
+                width=64,
+                height=30,
+                corner_radius=8,
+                fg_color=COLORS["panel_alt"],
+                hover_color=COLORS["panel_hover"],
+                text_color=COLORS["text_dim"],
+                font=FONT_UI_SMALL,
+                command=command,
+            ).grid(row=0, column=column, sticky="w", padx=(4, 0))
+        self._refresh_project_selector()
 
         self.editor_page = ctk.CTkFrame(self, fg_color="transparent")
         self.editor_page.grid(row=1, column=0, sticky="nsew")
@@ -252,25 +332,7 @@ class RecipeStudioApp(ctk.CTk):
         self.tabbar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
         self.tab_buttons: dict[str, ctk.CTkButton] = {}
         for module in self.modules:
-            image = self._load_tab_icon(module)
-            width = max(80, len(module.title) * 8 + 26) + (24 if image else 0)
-            btn = ctk.CTkButton(
-                self.tabbar,
-                text=module.title,
-                image=image,
-                compound="left",
-                anchor="w",
-                height=30,
-                width=width,
-                corner_radius=8,
-                fg_color=COLORS["panel_alt"],
-                hover_color=COLORS["panel_hover"],
-                text_color=COLORS["text"],
-                font=FONT_UI_SMALL,
-                command=lambda m=module: self.show_module(m),
-            )
-            btn.pack(side="left", padx=2, pady=2)
-            self.tab_buttons[module.id] = btn
+            self._add_module_tab(module)
 
         self.editor_container = ctk.CTkFrame(right, fg_color="transparent")
         self.editor_container.grid(row=1, column=0, sticky="nsew", padx=8, pady=(4, 4))
@@ -462,6 +524,207 @@ class RecipeStudioApp(ctk.CTk):
             return ctk_image
         except Exception:
             return None
+
+    def _add_module_tab(self, module) -> None:
+        image = self._load_tab_icon(module)
+        width = max(80, len(module.title) * 8 + 26) + (24 if image else 0)
+        btn = ctk.CTkButton(
+            self.tabbar,
+            text=module.title,
+            image=image,
+            compound="left",
+            anchor="w",
+            height=30,
+            width=width,
+            corner_radius=8,
+            fg_color=COLORS["panel_alt"],
+            hover_color=COLORS["panel_hover"],
+            text_color=COLORS["text"],
+            font=FONT_UI_SMALL,
+            command=lambda m=module: self.show_module(m),
+        )
+        btn.pack(side="left", padx=2, pady=2)
+        self.tab_buttons[module.id] = btn
+
+    def _rebuild_tabs(self) -> None:
+        for child in self.tabbar.winfo_children():
+            try:
+                child.destroy()
+            except tk.TclError:
+                pass
+        self.tab_buttons = {}
+        self._tab_images = []
+        for module in self.modules:
+            self._add_module_tab(module)
+
+    # ------------------------------------------------------------------
+    # Projects
+    # ------------------------------------------------------------------
+    def _refresh_project_selector(self) -> None:
+        if not hasattr(self, "project_menu"):
+            return
+        try:
+            infos = list_projects(self.app_config)
+        except ProjectError:
+            infos = []
+        self._project_infos = infos
+        values = [info.label for info in infos]
+        current = str(self.config.get("name") or "Default")
+        if current not in values:
+            values.append(current)
+        if not values:
+            values = ["Default"]
+        self.project_menu.configure(values=values)
+        self.project_menu.set(current)
+
+    def _on_project_selected(self, label: str) -> None:
+        info = next(
+            (item for item in self._project_infos if item.label == label), None
+        )
+        if info is None:
+            return
+        if self.config.project_path is not None and info.path == self.config.project_path:
+            return
+        try:
+            config = load_project(info.path)
+        except ProjectError as exc:
+            self.set_status(f"Cannot open project: {exc}", error=True)
+            self._refresh_project_selector()
+            return
+        self.switch_project(config, info)
+
+    def new_project(self) -> None:
+        from RecipeStudio.components.project_dialog import ProjectDialog
+
+        ProjectDialog(self, None)
+
+    def edit_project(self) -> None:
+        from RecipeStudio.components.project_dialog import ProjectDialog
+
+        ProjectDialog(self, self.config)
+
+    def open_project(self) -> None:
+        try:
+            folder = projects_dir(self.app_config)
+        except ProjectError:
+            folder = None
+        path = filedialog.askopenfilename(
+            title="Открыть проект",
+            filetypes=[("Recipe Studio project", "*.json"), ("All files", "*.*")],
+            initialdir=str(folder) if folder is not None else None,
+        )
+        if not path:
+            return
+        try:
+            config = load_project(path)
+        except ProjectError as exc:
+            self.set_status(f"Cannot open project: {exc}", error=True)
+            return
+        self.switch_project(config)
+
+    def switch_project(self, config: Config, info=None) -> None:
+        """Replace every project-scoped service and reload the UI."""
+        self._search_gen += 1
+        self.palette_selection = None
+        self.slot_pick = None
+        self.hovered_entry = None
+        self.hovered_slot = None
+        self.favorites_only = False
+        if hasattr(self, "item_grid"):
+            self.item_grid.set_selected(None)
+        if hasattr(self, "fav_button"):
+            self._update_fav_button()
+
+        self.config = config
+        self.project_info = info
+
+        self.recipe_index = RecipeIndex()
+        if hasattr(self, "recipe_panel"):
+            self.recipe_panel.set_index(self.recipe_index)
+        self._build_data_services()
+
+        self.modules, self.module_errors = discover_modules(config)
+        if self.current_module is not None and self.current_module not in self.modules:
+            if self.current_editor is not None:
+                try:
+                    self.current_editor.grid_remove()
+                except Exception:
+                    pass
+            self.current_module = None
+            self.current_editor = None
+        self._rebuild_tabs()
+
+        self.title(self._window_title())
+        if config.project_path is not None:
+            self.app_config.data["active_project"] = str(config.project_path)
+            try:
+                self.app_config.save()
+            except OSError:
+                pass
+        self._refresh_project_selector()
+
+        if self.modules:
+            if self.current_module is None:
+                self.show_module(self.modules[0])
+            else:
+                current = self.current_module
+                self.current_module = None
+                self.show_module(current)
+        else:
+            self.set_status("No recipe modules found", error=True)
+
+        self.show_all_items()
+        self.recipe_panel.refresh()
+        if hasattr(self, "export_panel"):
+            self.update_export()
+        if getattr(self, "global_tab", "editor") == "graph":
+            self.graph_view.refresh(recenter=True)
+        self._load_names_async()
+        if config.get("auto_index"):
+            self.recipe_panel.auto_index()
+
+        missing = self._missing_project_paths()
+        if missing:
+            self.set_status(
+                "Project loaded · missing: " + ", ".join(missing), error=True
+            )
+        else:
+            self.set_status(
+                f"Project: {self.config.get('name') or 'Default'} · "
+                f"{len(self._all_entries)} items"
+            )
+
+    def _missing_project_paths(self) -> list[str]:
+        missing: list[str] = []
+        for key, label in (
+            ("icons_dir", "icons_dir"),
+            ("items_json", "items_json"),
+            ("database", "database"),
+            ("mods_dir", "mods_dir"),
+            ("kubejs_dir", "kubejs_dir"),
+        ):
+            if not self.config.get(key):
+                continue
+            path = self.config.path_for(key)
+            if not path.exists():
+                missing.append(f"{label}: {path}")
+        return missing
+
+    def save_active_project(self) -> None:
+        if self.config.project_path is None:
+            return
+        try:
+            save_project(self.config.project_path, self.config)
+        except ProjectError as exc:
+            self.set_status(f"Cannot save project: {exc}", error=True)
+
+    def _create_project(self, name: str, values: dict) -> None:
+        try:
+            config = create_project(self.app_config, name, values)
+        except ProjectError as exc:
+            self.set_status(f"Cannot create project: {exc}", error=True)
+            return
+        self.switch_project(config)
 
     # ------------------------------------------------------------------
     def show_module(self, module) -> None:

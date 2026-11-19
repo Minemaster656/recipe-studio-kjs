@@ -25,6 +25,7 @@ TOP_LEVEL_FILES = [
     "pyproject.toml",
     "README.md",
     "RecipeStudio",
+    "projects",
     "src",
     "start_recipe_studio.bat",
     "TECHNICAL.md",
@@ -54,6 +55,9 @@ def iter_files(path: Path):
             continue
         relative_parts = child.relative_to(ROOT).parts
         if any(part in EXCLUDED_DIRS for part in relative_parts):
+            continue
+        # Per-project caches are machine-local and must not ship in the archive.
+        if relative_parts[:3] == ("RecipeStudio", "data", "projects"):
             continue
         if child.suffix in EXCLUDED_SUFFIXES:
             continue

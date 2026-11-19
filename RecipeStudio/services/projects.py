@@ -308,6 +308,22 @@ def _has_legacy_keys(config: Config) -> bool:
     return any(key in config.data for key in LEGACY_PROJECT_KEYS)
 
 
+def _copy_legacy_caches(legacy: Config, project: Config) -> None:
+    """Move the old global favourites/name cache into the project folder."""
+    for key in ("favorites", "names_cache"):
+        if not legacy.get(key) or not project.get(key):
+            continue
+        source = legacy.path_for(key)
+        target = project.path_for(key)
+        if not source.is_file() or target.exists():
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+        except OSError:
+            pass
+
+
 def migrate_legacy_config(app_config: Config) -> Path | None:
     """Convert the old flat config.json into projects/default.json.
 
@@ -324,6 +340,7 @@ def migrate_legacy_config(app_config: Config) -> Path | None:
         path = unique_project_path(folder, "Default")
         payload = legacy_project_payload(app_config)
         config = load_project_from_data(path, payload)
+        _copy_legacy_caches(app_config, config)
         created = config.project_path or path
 
     for key in LEGACY_PROJECT_KEYS:
