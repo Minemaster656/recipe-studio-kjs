@@ -104,6 +104,28 @@ class ProjectDialog(ctk.CTkToplevel):
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(10, 4))
         row += 1
 
+        self.create_mode_var = ctk.StringVar(
+            value=str(project.get("create_export_mode") or "addon")
+            if project
+            else "addon"
+        )
+        ctk.CTkLabel(
+            body, text="Create-рецепты:", anchor="w", font=FONT_UI_SMALL,
+            text_color=COLORS["text_dim"],
+        ).grid(row=row, column=0, sticky="w", pady=(4, 0))
+        ctk.CTkOptionMenu(
+            body,
+            values=["addon", "custom"],
+            variable=self.create_mode_var,
+            width=180,
+            fg_color=COLORS["panel_alt"],
+            button_color=COLORS["panel_hover"],
+            button_hover_color=COLORS["accent"],
+            text_color=COLORS["text"],
+            font=FONT_UI_SMALL,
+        ).grid(row=row, column=1, sticky="w", padx=(6, 0), pady=(4, 0))
+        row += 1
+
         ctk.CTkLabel(
             body,
             text=(
@@ -240,6 +262,7 @@ class ProjectDialog(ctk.CTkToplevel):
                 self.project.get("embedding_model") if self.project else ""
             ),
             "auto_index": bool(self.auto_index_var.get()),
+            "create_export_mode": self.create_mode_var.get() or "addon",
             "search_limit": int(self.search_limit_var.get() or 500),
             "disabled_modules": [
                 part.strip()

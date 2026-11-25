@@ -169,6 +169,8 @@ def _normalise_project_data(
         disabled = [part.strip() for part in disabled.split(",") if part.strip()]
     result["disabled_modules"] = [str(item) for item in disabled if str(item).strip()]
     result["auto_index"] = bool(result.get("auto_index", True))
+    mode = str(result.get("create_export_mode") or "addon")
+    result["create_export_mode"] = mode if mode in ("addon", "custom") else "addon"
     return result
 
 

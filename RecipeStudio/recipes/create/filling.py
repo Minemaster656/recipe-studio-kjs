@@ -9,7 +9,11 @@ from RecipeStudio.recipes.base import (
     RecipeModule,
     ingredient_from_state,
 )
-from RecipeStudio.recipes.create.common import CreateEditorBase, native_body
+from RecipeStudio.recipes.create.common import (
+    CreateEditorBase,
+    custom_body,
+    native_body,
+)
 from RecipeStudio.theme import COLORS
 
 
@@ -92,12 +96,11 @@ class FillingEditor(CreateEditorBase):
             return ""
         fluid = self.fluid_in.ingredient.copy()
         fluid.amount = self.amount.value()
-        return native_body(
-            event_var,
-            "filling",
-            [self.item_in.ingredient, fluid],
-            [self.output.ingredient],
-        )
+        inputs = [self.item_in.ingredient, fluid]
+        outputs = [self.output.ingredient]
+        if self.use_custom():
+            return custom_body(event_var, "create:filling", inputs, outputs)
+        return native_body(event_var, "filling", inputs, outputs)
 
     def clear(self) -> None:
         self.item_in.clear(notify=False)

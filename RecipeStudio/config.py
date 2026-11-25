@@ -74,6 +74,7 @@ DEFAULT_PROJECT: dict[str, Any] = {
     "names_cache": None,
     "search_limit": 500,
     "disabled_modules": [],
+    "create_export_mode": "addon",
 }
 
 # Backwards-compatible alias used by older imports.

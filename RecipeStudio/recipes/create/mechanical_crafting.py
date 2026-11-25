@@ -1,15 +1,23 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
 import customtkinter as ctk
 
 from RecipeStudio.components.slot import Slot
+from RecipeStudio.model.ingredient import Ingredient
 from RecipeStudio.recipes.base import (
     EditorContext,
     RecipeEditor,
     RecipeModule,
     ingredient_from_state,
 )
-from RecipeStudio.recipes.create.common import CreateEditorBase
+from RecipeStudio.recipes.create.common import (
+    CreateEditorBase,
+    ingredient_json,
+    result_json,
+)
 from RecipeStudio.services.codegen import item_literal
 from RecipeStudio.theme import COLORS, FONT_UI_SMALL
 
@@ -150,7 +158,7 @@ class MechanicalCraftingEditor(CreateEditorBase):
         max_r = max(r for r, _ in occupied)
         min_c = min(c for _, c in occupied)
         max_c = max(c for _, c in occupied)
-        keys: dict[str, str] = {}
+        keys: dict[str, Ingredient] = {}
         by_literal: dict[str, str] = {}
         rows: list[str] = []
         for r in range(min_r, max_r + 1):
@@ -166,7 +174,7 @@ class MechanicalCraftingEditor(CreateEditorBase):
                     if len(by_literal) >= 26:
                         raise ValueError("Too many distinct ingredients (max 26)")
                     by_literal[literal] = letter
-                    keys[letter] = literal
+                    keys[letter] = ing.copy()
                 chars.append(by_literal[literal])
             rows.append("".join(chars))
         return rows, keys
@@ -177,9 +185,23 @@ class MechanicalCraftingEditor(CreateEditorBase):
         rows, keys = self._trimmed()
         if not rows:
             return ""
+        if self.use_custom():
+            recipe = {
+                "type": "create:mechanical_crafting",
+                "accept_mirrored": False,
+                "key": {letter: ingredient_json(ing) for letter, ing in keys.items()},
+                "pattern": rows,
+                "result": result_json(self.output.ingredient),
+            }
+            return (
+                f"{event_var}.custom("
+                f"{json.dumps(recipe, indent=2, ensure_ascii=False)})"
+            )
         out = item_literal(self.output.ingredient, output=True)
         pattern = ",\n".join(f"    '{row}'" for row in rows)
-        key_lines = ",\n".join(f"    {k}: {v}" for k, v in keys.items())
+        key_lines = ",\n".join(
+            f"    {k}: {item_literal(v)}" for k, v in keys.items()
+        )
         return (
             f"{event_var}.recipes.create.mechanical_crafting({out}, [\n"
             f"{pattern}\n"

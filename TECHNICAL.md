@@ -76,6 +76,7 @@ projects/               профили сборок (по JSON-файлу на �
 | `names_cache` | кэш отображаемых имён (свой на проект) |
 | `search_limit` | максимум результатов поиска |
 | `disabled_modules` | id отключённых модулей рецептов |
+| `create_export_mode` | `addon` (нативные `event.recipes.create.*`) или `custom` (сырой JSON) |
 
 `icon_manifest` — необязательный JSON-объект `id -> значение`, где значение:
 

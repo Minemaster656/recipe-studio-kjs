@@ -114,6 +114,27 @@ class ExportPanel(ctk.CTkFrame):
             checkbox_width=18,
             checkbox_height=18,
         ).pack(side="left", padx=(16, 0))
+        ctk.CTkLabel(
+            options,
+            text="Create:",
+            text_color=COLORS["text_muted"],
+            font=FONT_UI_SMALL,
+        ).pack(side="left", padx=(16, 4))
+        self.create_mode = ctk.CTkSegmentedButton(
+            options,
+            values=["addon", "custom"],
+            height=26,
+            fg_color=COLORS["panel_alt"],
+            selected_color=COLORS["accent"],
+            selected_hover_color=COLORS["accent_2"],
+            unselected_color=COLORS["panel_alt"],
+            unselected_hover_color=COLORS["panel_hover"],
+            text_color=COLORS["text"],
+            font=("DejaVu Sans", 9),
+            command=self.app.set_create_export_mode,
+        )
+        self.create_mode.set(getattr(self.app, "create_export_mode", "addon"))
+        self.create_mode.pack(side="left")
 
         filter_frame = ctk.CTkFrame(self, fg_color="transparent")
         filter_frame.grid(row=4, column=0, sticky="ew", padx=10, pady=(2, 4))
@@ -154,6 +175,10 @@ class ExportPanel(ctk.CTkFrame):
             wraplength=900,
         )
         self.errors_label.grid(row=5, column=0, sticky="ew", padx=10, pady=(0, 8))
+
+    def set_create_mode(self, mode: str) -> None:
+        if mode in ("addon", "custom"):
+            self.create_mode.set(mode)
 
     # ------------------------------------------------------------------
     def set_code(self, code: str) -> None:

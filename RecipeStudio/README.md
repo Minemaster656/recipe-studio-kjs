@@ -60,6 +60,19 @@ JSON-профиль в каталоге данных пользователя
 (`minecraft:water`). Векторная база индексирует bucket-предметы, а не id
 жидкостей.
 
+## Create: addon или custom
+
+В панели **EXPORT** есть переключатель `Create: addon / custom`:
+
+- `addon` — нативные вызовы KubeJS Create (`event.recipes.create.crushing(...)`);
+- `custom` — сырой JSON (`event.custom({ "type": "create:crushing", ... })`),
+  как в рецептах самого мода.
+
+Режим сохраняется в профиле проекта (`create_export_mode`) и применяется ко
+всем create-редакторам: compacting, crushing, cutting, deploying, emptying,
+filling, haunting, mechanical crafting, mixing, milling, pressing, sandpaper,
+sequenced assembly, splashing.
+
 ## Включённые модули
 
 Ванильные: Crafting (shaped/shapeless), Smelting, Blasting, Smoking, Campfire

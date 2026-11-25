@@ -50,6 +50,8 @@ class RecipeStudioApp(ctk.CTk):
         self.config = config
         self.app_config = app_config if app_config is not None else Config()
         self.project_info = project_info
+        mode = str(config.get("create_export_mode") or "addon")
+        self.create_export_mode = mode if mode in ("addon", "custom") else "addon"
         self.title(self._window_title())
         self.geometry("1440x920")
         self.minsize(1000, 700)
@@ -639,6 +641,8 @@ class RecipeStudioApp(ctk.CTk):
 
         self.config = config
         self.project_info = info
+        mode = str(config.get("create_export_mode") or "addon")
+        self.create_export_mode = mode if mode in ("addon", "custom") else "addon"
 
         self.recipe_index = RecipeIndex()
         if hasattr(self, "recipe_panel"):
@@ -678,6 +682,7 @@ class RecipeStudioApp(ctk.CTk):
         self.show_all_items()
         self.recipe_panel.refresh()
         if hasattr(self, "export_panel"):
+            self.export_panel.set_create_mode(self.create_export_mode)
             self.update_export()
         if getattr(self, "global_tab", "editor") == "graph":
             self.graph_view.refresh(recenter=True)
@@ -945,6 +950,20 @@ class RecipeStudioApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Export
     # ------------------------------------------------------------------
+    def set_create_export_mode(self, mode: str) -> None:
+        if mode not in ("addon", "custom"):
+            return
+        self.create_export_mode = mode
+        self.config.data["create_export_mode"] = mode
+        if self.config.project_path is not None:
+            try:
+                save_project(self.config.project_path, self.config)
+            except ProjectError as exc:
+                self.set_status(f"Cannot save project: {exc}", error=True)
+        self.update_export()
+        label = "native Create addon" if mode == "addon" else "raw JSON"
+        self.set_status(f"Create export: {label}")
+
     def _compute_export(self, force_remove: bool = False):
         editor = self.current_editor
         if editor is None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import customtkinter as ctk
@@ -337,6 +338,22 @@ class SequencedAssemblyEditor(CreateEditorBase):
         start, transitional = self._inputs()  # type: ignore[misc]
         results = [i.copy() for i in self.results.ingredients()]
         results += [i.copy() for i in self.scrap.ingredients()]
+        loops = int(self.loops.get_value() or 1)
+        if self.use_custom():
+            recipe = {
+                "type": "create:sequenced_assembly",
+                "ingredient": ingredient_json(start),
+                "loops": loops,
+                "results": [result_json(i) for i in results],
+                "sequence": [
+                    step.serialize(transitional) for step in self.steps
+                ],
+                "transitional_item": result_json(transitional),
+            }
+            return (
+                f"{event_var}.custom("
+                f"{json.dumps(recipe, indent=2, ensure_ascii=False)})"
+            )
         result_literals = [item_literal(i, output=True) for i in results]
         result_literals = [x for x in result_literals if x]
         steps = [step.serialize_native(transitional, event_var) for step in self.steps]
@@ -347,7 +364,7 @@ class SequencedAssemblyEditor(CreateEditorBase):
             f"  {js_array(steps)}\n"
             ")"
             f".transitionalItem({quote(transitional.id)})"
-            f".loops({int(self.loops.get_value() or 1)})"
+            f".loops({loops})"
         )
         return body
 

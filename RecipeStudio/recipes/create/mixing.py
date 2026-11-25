@@ -9,7 +9,11 @@ from RecipeStudio.recipes.base import (
     RecipeModule,
     ingredients_from_state,
 )
-from RecipeStudio.recipes.create.common import CreateEditorBase, native_body
+from RecipeStudio.recipes.create.common import (
+    CreateEditorBase,
+    custom_body,
+    native_body,
+)
 from RecipeStudio.theme import COLORS
 
 
@@ -122,12 +126,16 @@ class MixingEditor(CreateEditorBase):
             return ""
         inputs = self.item_inputs.ingredients() + self.fluid_inputs.ingredients()
         outputs = self.fluid_outputs.ingredients() + self.item_outputs.ingredients()
+        heat = self.heat.requirement()
+        if self.use_custom():
+            extra = {"heat_requirement": heat} if heat else {}
+            return custom_body(event_var, "create:mixing", inputs, outputs, **extra)
         return native_body(
             event_var,
             "mixing",
             inputs,
             outputs,
-            heat=self.heat.requirement(),
+            heat=heat,
         )
 
     def clear(self) -> None:

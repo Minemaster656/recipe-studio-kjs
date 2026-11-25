@@ -143,6 +143,10 @@ class CreateEditorBase(RecipeEditor):
         kwargs.setdefault("on_change", self.changed)
         return Slot(master, self.ctx.app, **kwargs)
 
+    def use_custom(self) -> bool:
+        """True when Create recipes should be exported as raw JSON."""
+        return str(getattr(self.ctx.app, "create_export_mode", "addon")) == "custom"
+
     def body(self, **extra) -> str:
         raise NotImplementedError
 
@@ -267,17 +271,29 @@ class SimpleProcessEditor(CreateEditorBase):
     def serialize(self, event_var: str = "event") -> str:
         if self.validate():
             return ""
+        ticks = (
+            int(self.time.get_ticks())
+            if self.time is not None and self.time.get_ticks() is not None
+            else None
+        )
+        if self.use_custom():
+            extra = {}
+            if ticks is not None:
+                extra["processing_time"] = ticks
+            return custom_body(
+                event_var,
+                self.module.recipe_type,
+                self._ingredients(),
+                self._results(),
+                **extra,
+            )
         method = self.module.recipe_type.split(":", 1)[-1]
         return native_body(
             event_var,
             method,
             self._ingredients(),
             self._results(),
-            processing_time=(
-                int(self.time.get_ticks())
-                if self.time is not None and self.time.get_ticks() is not None
-                else None
-            ),
+            processing_time=ticks,
         )
 
     def clear(self) -> None:
